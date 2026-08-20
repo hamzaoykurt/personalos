@@ -291,7 +291,7 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
   const [hydrated, setHydrated] = useState(false);
   const [syncState, setSyncState] = useState<"loading" | "saved" | "saving" | "offline">("loading");
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>("dark");
   const [commandOpen, setCommandOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureType, setCaptureType] = useState<CaptureType>("task");
@@ -303,7 +303,7 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
     const storedTheme = window.localStorage.getItem("personal-os-theme") as Theme | null;
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
-      : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      : "dark";
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
   }, []);
@@ -634,6 +634,7 @@ function TopBar({
         <button
           className="icon-button theme-toggle"
           onClick={onThemeToggle}
+          aria-pressed={theme === "dark"}
           aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}
           title={theme === "dark" ? "Açık tema" : "Koyu tema"}
         >
@@ -683,10 +684,8 @@ function HomePage({
   const todayTasks = state.tasks.filter((task) => task.date === todayIso()).slice(0, 5);
   const allActiveProjects = state.projects.filter((project) => project.status !== "done");
   const activeProjects = allActiveProjects.slice(0, 3);
-  const weeklyScore = Math.round(
-    state.weeklyTargets.reduce((sum, item) => sum + Math.min(item.current / item.target, 1), 0)
-      / state.weeklyTargets.length * 100,
-  );
+  const weeklyCurrent = state.weeklyTargets.reduce((sum, item) => sum + Math.min(item.current, item.target), 0);
+  const weeklyGoal = state.weeklyTargets.reduce((sum, item) => sum + item.target, 0);
   const primaryTask = todayTasks.find((task) => !task.completed) ?? todayTasks[0];
   const openTaskCount = state.tasks.filter((task) => !task.completed).length;
 
@@ -703,7 +702,7 @@ function HomePage({
       <nav className="home-status-rail" aria-label="Güncel sistem özeti">
         <button onClick={() => go("tasks")}><span>Açık görev</span><strong>{openTaskCount}</strong><ArrowRight /></button>
         <button onClick={() => go("projects")}><span>Aktif proje</span><strong>{allActiveProjects.length}</strong><ArrowRight /></button>
-        <button onClick={() => go("career")}><span>Haftalık ritim</span><strong>%{weeklyScore}</strong><ArrowRight /></button>
+        <button onClick={() => go("career")}><span>Bu hafta</span><strong>{weeklyCurrent}/{weeklyGoal}</strong><ArrowRight /></button>
       </nav>
 
       <div className="home-work-grid">
@@ -738,7 +737,7 @@ function HomePage({
               <button onClick={() => go("career")} aria-label="Haftalık görünümü aç"><ArrowRight /></button>
             </div>
             <div className="rhythm-content">
-              <strong className="rhythm-score">{weeklyScore}<small>%</small></strong>
+              <strong className="rhythm-score">{weeklyCurrent}<small>/{weeklyGoal}</small></strong>
               <div className="rhythm-targets">{state.weeklyTargets.slice(0, 4).map((target) => <WeeklyTargetMini key={target.id} target={target} />)}</div>
             </div>
           </section>
@@ -754,7 +753,7 @@ function HomePage({
               <button key={project.id} onClick={() => openProject(project.id)}>
                 <span className={`project-index tone-${index + 1}`}>{(index + 1).toString().padStart(2, "0")}</span>
                 <span className="project-compact-copy"><small>{project.category}</small><strong>{project.title}</strong><em>{project.nextAction}</em></span>
-                <span className="project-compact-progress"><i style={{ "--project-progress": `${project.progress}%` } as React.CSSProperties} /><b>{project.progress}%</b></span>
+                <span className="project-compact-progress"><i style={{ "--project-progress": `${project.progress}%` } as React.CSSProperties} /><b>{project.subtasks.filter((item) => item.completed).length}/{project.subtasks.length}</b></span>
               </button>
             ))}
           </div>
@@ -817,7 +816,7 @@ function ProjectsPage({
   openProject: (id: string) => void;
   openCapture: () => void;
 }) {
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setView] = useState<"board" | "list">("list");
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const columns: ProjectStatus[] = ["backlog", "todo", "progress", "review", "done"];
 
@@ -830,8 +829,8 @@ function ProjectsPage({
     <div className="projects-view">
       <div className="view-toolbar">
         <div className="segmented-control">
-          <button className={view === "board" ? "is-active" : ""} onClick={() => setView("board")}><GripVertical /> Pano</button>
-          <button className={view === "list" ? "is-active" : ""} onClick={() => setView("list")}><List /> Liste</button>
+          <button className={view === "board" ? "is-active" : ""} aria-pressed={view === "board"} onClick={() => setView("board")}><GripVertical /> Pano</button>
+          <button className={view === "list" ? "is-active" : ""} aria-pressed={view === "list"} onClick={() => setView("list")}><List /> Liste</button>
         </div>
         <div className="toolbar-info"><CircleDot /> {projects.filter((project) => project.status !== "done").length} aktif misyon</div>
         <button className="primary-action" onClick={openCapture}><Plus /> Yeni Proje</button>
@@ -882,20 +881,25 @@ function ProjectsPage({
           })}
         </div>
       ) : (
-        <div className="project-table-wrap">
-          <table className="project-table">
-            <thead><tr><th>Proje</th><th>Durum</th><th>Öncelik</th><th>İlerleme</th><th>Son tarih</th><th>Sonraki adım</th></tr></thead>
-            <tbody>{projects.map((project) => (
-              <tr key={project.id} onClick={() => openProject(project.id)}>
-                <td><span className="table-category">{project.category}</span><strong>{project.title}</strong></td>
-                <td><span className={`status-pill is-${project.status}`}>{statusLabels[project.status]}</span></td>
-                <td>{priorityLabels[project.priority]}</td>
-                <td><div className="table-progress"><Meter value={project.progress} /><span>{project.progress}%</span></div></td>
-                <td>{project.dueDate ? formatDate(project.dueDate) : "—"}</td>
-                <td>{project.nextAction}</td>
-              </tr>
-            ))}</tbody>
-          </table>
+        <div className="project-list-cards">
+          {projects.map((project) => {
+            const completed = project.subtasks.filter((item) => item.completed).length;
+            return (
+              <button className="project-list-card" key={project.id} onClick={() => openProject(project.id)}>
+                <span className={`project-list-status is-${project.status}`}>{statusLabels[project.status]}</span>
+                <span className="project-list-main">
+                  <small>{project.category}</small>
+                  <strong>{project.title}</strong>
+                  <em>{project.nextAction}</em>
+                </span>
+                <span className="project-list-progress">
+                  <span><i style={{ width: `${project.progress}%` }} /></span>
+                  <b>{completed}/{project.subtasks.length}</b>
+                </span>
+                <ArrowRight className="project-list-arrow" />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -916,7 +920,7 @@ function TasksPage({ tasks, projects, toggleTask, openCapture }: { tasks: Task[]
     <div className="tasks-layout">
       <div className="category-tabs">
         {(Object.keys(categoryMeta) as TaskCategory[]).map((key) => (
-          <button key={key} className={category === key ? "is-active" : ""} onClick={() => setCategory(key)}>
+          <button key={key} className={category === key ? "is-active" : ""} aria-pressed={category === key} onClick={() => setCategory(key)}>
             <span>{categoryMeta[key].label}</span><small>{categoryMeta[key].description}</small><b>{tasks.filter((task) => task.category === key && !task.completed).length}</b>
           </button>
         ))}
@@ -925,7 +929,7 @@ function TasksPage({ tasks, projects, toggleTask, openCapture }: { tasks: Task[]
         <div className="task-list-heading">
           <div><span>{categoryMeta[category].label}</span><h2>{category === "todo" ? "Açık görevler" : category === "purchase" ? "Satın alma listesi" : "Keşif listesi"}</h2></div>
           <div className="task-filter">
-            {(["open", "all", "done"] as const).map((value) => <button key={value} className={filter === value ? "is-active" : ""} onClick={() => setFilter(value)}>{value === "open" ? "Açık" : value === "all" ? "Tümü" : "Tamamlanan"}</button>)}
+            {(["open", "all", "done"] as const).map((value) => <button key={value} className={filter === value ? "is-active" : ""} aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === "open" ? "Açık" : value === "all" ? "Tümü" : "Tamamlanan"}</button>)}
           </div>
         </div>
         <div className="detailed-task-list">
