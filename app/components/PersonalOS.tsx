@@ -23,6 +23,7 @@ import {
   List,
   Menu,
   Mic2,
+  Moon,
   MoreHorizontal,
   Orbit,
   Plus,
@@ -70,6 +71,7 @@ type Section =
   | "settings";
 
 type CaptureType = "task" | "note" | "project" | "work" | "research";
+type Theme = "light" | "dark";
 type SmartDestination = CaptureType | "purchase" | "place";
 type OrganizedCapture = {
   id: string;
@@ -140,7 +142,7 @@ const navSecondary: { id: Section; label: string; icon: LucideIcon }[] = [
 const sectionMeta: Record<Section, { eyebrow: string; title: string; description: string }> = {
   home: {
     eyebrow: "KOMUTA MERKEZİ / 01",
-    title: "Bugün ne önemli?",
+    title: "Bugünün odağı",
     description: "Günün yönünü belirle, sonra tek bir sonraki adıma odaklan.",
   },
   projects: {
@@ -289,12 +291,27 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
   const [hydrated, setHydrated] = useState(false);
   const [syncState, setSyncState] = useState<"loading" | "saved" | "saving" | "offline">("loading");
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [theme, setTheme] = useState<Theme>("light");
   const [commandOpen, setCommandOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureType, setCaptureType] = useState<CaptureType>("task");
   const [captureMode, setCaptureMode] = useState<"single" | "organize">("single");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("personal-os-theme") as Theme | null;
+    const nextTheme = storedTheme === "dark" || storedTheme === "light"
+      ? storedTheme
+      : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle("mobile-menu-active", mobileMenu);
+    return () => document.body.classList.remove("mobile-menu-active");
+  }, [mobileMenu]);
 
   useEffect(() => {
     let alive = true;
@@ -372,6 +389,13 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const toggleTheme = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    window.localStorage.setItem("personal-os-theme", nextTheme);
+  };
+
   const openCapture = (type: CaptureType = "task", mode: "single" | "organize" = "single") => {
     setCaptureType(type);
     setCaptureMode(mode);
@@ -415,6 +439,7 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
         go={go}
         onClose={() => setMobileMenu(false)}
       />
+      {mobileMenu && <button className="mobile-sidebar-scrim" onClick={() => setMobileMenu(false)} aria-label="Menüyü kapat" />}
 
       <main className="main-shell">
         <TopBar
@@ -422,6 +447,9 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
           onSearch={() => setCommandOpen(true)}
           onCapture={() => openCapture("task")}
           onMenu={() => setMobileMenu(true)}
+          sectionTitle={meta.title}
+          theme={theme}
+          onThemeToggle={toggleTheme}
         />
         <div className={classNames("page", activeSection === "calendar" && "page-calendar", activeSection === "home" && "page-home")}>
           <div className="page-stage" key={activeSection}>
@@ -573,11 +601,17 @@ function TopBar({
   onSearch,
   onCapture,
   onMenu,
+  sectionTitle,
+  theme,
+  onThemeToggle,
 }: {
   syncState: "loading" | "saved" | "saving" | "offline";
   onSearch: () => void;
   onCapture: () => void;
   onMenu: () => void;
+  sectionTitle: string;
+  theme: Theme;
+  onThemeToggle: () => void;
 }) {
   const syncLabels = {
     loading: "Yükleniyor",
@@ -590,12 +624,21 @@ function TopBar({
       <button className="icon-button mobile-menu-button" onClick={onMenu} aria-label="Menüyü aç">
         <Menu />
       </button>
+      <span className="mobile-context" aria-live="polite">{sectionTitle}</span>
       <button className="search-trigger" onClick={onSearch} aria-label="Her yerde ara">
         <Search />
         <span>Her yerde ara</span>
         <kbd>⌘ K</kbd>
       </button>
       <div className="topbar-right">
+        <button
+          className="icon-button theme-toggle"
+          onClick={onThemeToggle}
+          aria-label={theme === "dark" ? "Açık temaya geç" : "Koyu temaya geç"}
+          title={theme === "dark" ? "Açık tema" : "Koyu tema"}
+        >
+          {theme === "dark" ? <SunMedium /> : <Moon />}
+        </button>
         <StatusLamp label={syncLabels[syncState]} tone={syncState === "offline" ? "red" : syncState === "saving" || syncState === "loading" ? "amber" : "olive"} pulse={syncState === "saving" || syncState === "loading"} />
         <span className="topbar-date">
           {new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date())}
