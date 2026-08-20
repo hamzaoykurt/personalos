@@ -26,9 +26,11 @@ test("server-renders the Personal OS command center", async () => {
 
   const html = await response.text();
   assert.match(html, /Personal OS/);
-  assert.match(html, /Bugün ne önemli\?/);
-  assert.match(html, /KOMUTA MERKEZİ/);
+  assert.match(html, />Bugün</);
+  assert.match(html, /Güncel sistem özeti/);
+  assert.match(html, /Görevler/);
   assert.match(html, /Her yerde ara/);
+  assert.doesNotMatch(html, /Bugün ne önemli\?|Aklındakini burada bırak/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton|Your site is taking shape/i);
 });
 

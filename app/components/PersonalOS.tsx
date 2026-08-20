@@ -3,35 +3,28 @@
 import {
   Archive,
   ArrowRight,
-  Atom,
   BookOpen,
   BriefcaseBusiness,
   CalendarDays,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Circle,
   CircleDot,
   ClipboardCheck,
   Clock3,
-  Command,
   Compass,
   Dumbbell,
-  Edit3,
-  ExternalLink,
   FileText,
   Folder,
   GripVertical,
   Languages,
   List,
   Menu,
-  MessageCircle,
   Mic2,
   MoreHorizontal,
   Orbit,
-  PanelLeftClose,
   Plus,
   Radar,
   RefreshCcw,
@@ -47,6 +40,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  HardwareButton,
+  StatusLamp,
+} from "./DesignPrimitives";
 import { createSeedState } from "@/lib/seed";
 import type {
   CuriosityQuestion,
@@ -73,6 +70,45 @@ type Section =
   | "settings";
 
 type CaptureType = "task" | "note" | "project" | "work" | "research";
+type SmartDestination = CaptureType | "purchase" | "place";
+type OrganizedCapture = {
+  id: string;
+  destination: SmartDestination;
+  title: string;
+  detail: string;
+  source: string;
+};
+
+type SpeechResultEvent = {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: { isFinal: boolean; 0: { transcript: string } };
+  };
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+const smartDestinationLabels: Record<SmartDestination, string> = {
+  task: "Görevler",
+  purchase: "Alınacaklar",
+  place: "Gezilecekler",
+  note: "Notlar",
+  project: "Projeler",
+  work: "İş alanı",
+  research: "Araştırma",
+};
 
 const sectionPaths: Record<Section, string> = {
   home: "/",
@@ -87,7 +123,7 @@ const sectionPaths: Record<Section, string> = {
 };
 
 const navPrimary: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: "home", label: "Ana Merkez", icon: Radar },
+  { id: "home", label: "Ana Sayfa", icon: Radar },
   { id: "projects", label: "Projeler", icon: Orbit },
   { id: "tasks", label: "Görevler", icon: ClipboardCheck },
   { id: "calendar", label: "Takvim", icon: CalendarDays },
@@ -199,16 +235,64 @@ function classNames(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+function inferSmartDestination(value: string): SmartDestination {
+  const text = value.toLocaleLowerCase("tr-TR");
+  if (/(satın al|alınacak|marketten|sipariş|fiyatına bak|kaç para|alışveriş)/.test(text)) return "purchase";
+  if (/(gezilecek|ziyaret et|gitmek istiyorum|mekan|müze|restoran|kafe|rota|mahalle|şehir)/.test(text)) return "place";
+  if (/(araştır|incele|öğren|merak|neden|nasıl|nedir|kaynak bul|hakkında oku|\?$)/.test(text)) return "research";
+  if (/(yeni proje|proje başlat|proje oluştur|uygulama geliştir|site kur|ürün geliştir)/.test(text)) return "project";
+  if (/(müşteri|toplantı|sunum|rapor|teslim|iş için|ofis|teklif|fatura|mail gönder|e-posta)/.test(text)) return "work";
+  if (/(not et|not al|fikir|düşünce|günlük|hatırlatma notu|alıntı)/.test(text)) return "note";
+  return "task";
+}
+
+function organizeCaptureText(value: string): OrganizedCapture[] {
+  const prepared = value
+    .replace(/\r/g, "\n")
+    .replace(/(^|\n)\s*(?:[-*•–—]|\d+[.)])\s*/g, "$1")
+    .replace(/([.!?])\s+/g, "$1\n")
+    .replace(/\s+(?=(?:ayrıca|sonra|bir de|bide|daha sonra)\b)/gi, "\n")
+    .replace(/\s*;\s*/g, "\n");
+
+  const rawChunks = prepared
+    .split(/\n+/)
+    .flatMap((chunk) => chunk.length > 150 ? chunk.split(/\s*,\s*|\s+ve\s+/i) : [chunk]);
+  const seen = new Set<string>();
+
+  return rawChunks.flatMap((raw) => {
+    const source = raw.trim().replace(/^(?:ayrıca|sonra|bir de|bide|ve)\s+/i, "").trim();
+    const fingerprint = source.toLocaleLowerCase("tr-TR");
+    if (source.length < 3 || seen.has(fingerprint)) return [];
+    seen.add(fingerprint);
+    return [{
+      id: uid("organized"),
+      destination: inferSmartDestination(source),
+      title: source.length > 112 ? `${source.slice(0, 109).trim()}…` : source,
+      detail: source.length > 112 ? source : "",
+      source,
+    }];
+  }).slice(0, 24);
+}
+
+function dateFromNaturalText(value: string, fallback: string) {
+  const text = value.toLocaleLowerCase("tr-TR");
+  if (!text.includes("yarın")) return fallback;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setMinutes(tomorrow.getMinutes() - tomorrow.getTimezoneOffset());
+  return tomorrow.toISOString().slice(0, 10);
+}
+
 export default function PersonalOS({ initialSection = "home" }: { initialSection?: Section }) {
   const [activeSection, setActiveSection] = useState<Section>(initialSection);
   const [state, setState] = useState<PersonalOSState>(() => createSeedState());
   const [hydrated, setHydrated] = useState(false);
   const [syncState, setSyncState] = useState<"loading" | "saved" | "saving" | "offline">("loading");
-  const [sidebarCompact, setSidebarCompact] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureType, setCaptureType] = useState<CaptureType>("task");
+  const [captureMode, setCaptureMode] = useState<"single" | "organize">("single");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -238,7 +322,7 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
   useEffect(() => {
     if (!hydrated) return;
     if (pendingSave.current) clearTimeout(pendingSave.current);
-    setSyncState("saving");
+    queueMicrotask(() => setSyncState("saving"));
     pendingSave.current = setTimeout(() => {
       fetch("/api/state", {
         method: "PUT",
@@ -288,8 +372,9 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const openCapture = (type: CaptureType = "task") => {
+  const openCapture = (type: CaptureType = "task", mode: "single" | "organize" = "single") => {
     setCaptureType(type);
+    setCaptureMode(mode);
     setCaptureOpen(true);
   };
 
@@ -322,13 +407,12 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
   const meta = sectionMeta[activeSection];
 
   return (
-    <div className={classNames("app-frame", sidebarCompact && "is-compact")}>
+    <div className="app-frame" data-section={activeSection}>
+      <div className="canvas-geometry" aria-hidden="true"><span /><span /><span /></div>
       <Sidebar
         active={activeSection}
-        compact={sidebarCompact}
         mobileOpen={mobileMenu}
         go={go}
-        onCompact={() => setSidebarCompact((value) => !value)}
         onClose={() => setMobileMenu(false)}
       />
 
@@ -339,42 +423,43 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
           onCapture={() => openCapture("task")}
           onMenu={() => setMobileMenu(true)}
         />
-        <div className={classNames("page", activeSection === "calendar" && "page-calendar")}>
-          <PageHeader meta={meta} onCapture={() => openCapture(activeSection === "projects" ? "project" : activeSection === "notes" ? "note" : activeSection === "work" ? "work" : "task")} />
+        <div className={classNames("page", activeSection === "calendar" && "page-calendar", activeSection === "home" && "page-home")}>
+          <div className="page-stage" key={activeSection}>
+            {activeSection !== "home" && <PageHeader meta={meta} onCapture={() => openCapture(activeSection === "projects" ? "project" : activeSection === "notes" ? "note" : activeSection === "work" ? "work" : "task")} />}
 
-          {activeSection === "home" && (
-            <HomePage
-              state={state}
-              setState={setState}
-              toggleTask={toggleTask}
-              openCapture={openCapture}
-              openProject={setSelectedProjectId}
-              go={go}
-            />
-          )}
-          {activeSection === "projects" && (
-            <ProjectsPage
-              projects={state.projects}
-              setState={setState}
-              openProject={setSelectedProjectId}
-              openCapture={() => openCapture("project")}
-            />
-          )}
-          {activeSection === "tasks" && (
-            <TasksPage tasks={state.tasks} projects={state.projects} toggleTask={toggleTask} openCapture={() => openCapture("task")} />
-          )}
-          {activeSection === "calendar" && (
-            <CalendarPage state={state} setState={setState} openCapture={() => openCapture("task")} />
-          )}
-          {activeSection === "career" && <CareerPage state={state} setState={setState} go={go} />}
-          {activeSection === "work" && <WorkPage state={state} setState={setState} openCapture={() => openCapture("work")} />}
-          {activeSection === "notes" && <NotesPage state={state} setState={setState} openCapture={() => openCapture("note")} />}
-          {activeSection === "archive" && <ArchivePage state={state} />}
-          {activeSection === "settings" && <SettingsPage syncState={syncState} state={state} />}
+            {activeSection === "home" && (
+              <HomePage
+                state={state}
+                toggleTask={toggleTask}
+                openCapture={openCapture}
+                openProject={setSelectedProjectId}
+                go={go}
+              />
+            )}
+            {activeSection === "projects" && (
+              <ProjectsPage
+                projects={state.projects}
+                setState={setState}
+                openProject={setSelectedProjectId}
+                openCapture={() => openCapture("project")}
+              />
+            )}
+            {activeSection === "tasks" && (
+              <TasksPage tasks={state.tasks} projects={state.projects} toggleTask={toggleTask} openCapture={() => openCapture("task")} />
+            )}
+            {activeSection === "calendar" && (
+              <CalendarPage state={state} setState={setState} openCapture={() => openCapture("task")} />
+            )}
+            {activeSection === "career" && <CareerPage state={state} setState={setState} go={go} />}
+            {activeSection === "work" && <WorkPage state={state} setState={setState} openCapture={() => openCapture("work")} />}
+            {activeSection === "notes" && <NotesPage state={state} setState={setState} openCapture={() => openCapture("note")} />}
+            {activeSection === "archive" && <ArchivePage state={state} />}
+            {activeSection === "settings" && <SettingsPage syncState={syncState} state={state} />}
+          </div>
         </div>
       </main>
 
-      <MobileNav active={activeSection} go={go} />
+      <MobileNav active={activeSection} go={go} onCapture={() => openCapture("task", "organize")} />
 
       {commandOpen && (
         <CommandPalette
@@ -395,6 +480,7 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
       {captureOpen && (
         <CaptureDialog
           type={captureType}
+          initialMode={captureMode}
           setType={setCaptureType}
           state={state}
           setState={setState}
@@ -415,17 +501,13 @@ export default function PersonalOS({ initialSection = "home" }: { initialSection
 
 function Sidebar({
   active,
-  compact,
   mobileOpen,
   go,
-  onCompact,
   onClose,
 }: {
   active: Section;
-  compact: boolean;
   mobileOpen: boolean;
   go: (section: Section) => void;
-  onCompact: () => void;
   onClose: () => void;
 }) {
   const renderLink = (item: { id: Section; label: string; icon: LucideIcon }) => {
@@ -440,9 +522,9 @@ function Sidebar({
           go(item.id);
         }}
         aria-current={active === item.id ? "page" : undefined}
-        title={compact ? item.label : undefined}
+        title={item.label}
       >
-        <Icon aria-hidden="true" />
+        <span className="nav-icon-well"><Icon aria-hidden="true" /></span>
         <span>{item.label}</span>
         {active === item.id && <span className="nav-signal" aria-hidden="true" />}
       </a>
@@ -458,25 +540,19 @@ function Sidebar({
         </div>
         <div className="brand-type">
           <strong>PERSONAL OS</strong>
-          <span>FIELD SYSTEM / 01</span>
+          <span>HAYAT · PROJE · BİLGİ</span>
         </div>
         <button className="icon-button sidebar-close" onClick={onClose} aria-label="Menüyü kapat">
           <X />
         </button>
       </div>
 
-      <div className="system-status">
-        <span className="status-light" />
-        <div>
-          <strong>SİSTEM AKTİF</strong>
-          <span>YEREL KAYIT / HAZIR</span>
-        </div>
-      </div>
+      <div className="system-status"><StatusLamp label="Güncel" tone="olive" pulse /><small>Yerel</small></div>
 
       <nav className="side-nav" aria-label="Ana navigasyon">
-        <span className="nav-label">ANA ALANLAR</span>
+        <span className="nav-label">MENÜ</span>
         {navPrimary.map(renderLink)}
-        <span className="nav-label secondary-label">SİSTEM</span>
+        <span className="nav-label secondary-label">DİĞER</span>
         {navSecondary.map(renderLink)}
       </nav>
 
@@ -487,10 +563,6 @@ function Sidebar({
           <div className="mini-progress"><span style={{ width: "34%" }} /></div>
           <small>AY 1 / 6</small>
         </div>
-        <button className="collapse-button" onClick={onCompact} aria-label={compact ? "Menüyü genişlet" : "Menüyü daralt"}>
-          <PanelLeftClose />
-          <span>{compact ? "Genişlet" : "Daralt"}</span>
-        </button>
       </div>
     </aside>
   );
@@ -514,25 +586,21 @@ function TopBar({
     offline: "Çevrimdışı önizleme",
   };
   return (
-    <div className="topbar">
+    <div className="topbar system-pod">
       <button className="icon-button mobile-menu-button" onClick={onMenu} aria-label="Menüyü aç">
         <Menu />
       </button>
-      <button className="search-trigger" onClick={onSearch}>
+      <button className="search-trigger" onClick={onSearch} aria-label="Her yerde ara">
         <Search />
         <span>Her yerde ara</span>
         <kbd>⌘ K</kbd>
       </button>
       <div className="topbar-right">
-        <span className={classNames("sync-status", `is-${syncState}`)}>
-          <span /> {syncLabels[syncState]}
-        </span>
+        <StatusLamp label={syncLabels[syncState]} tone={syncState === "offline" ? "red" : syncState === "saving" || syncState === "loading" ? "amber" : "olive"} pulse={syncState === "saving" || syncState === "loading"} />
         <span className="topbar-date">
           {new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date())}
         </span>
-        <button className="primary-action compact-action" onClick={onCapture}>
-          <Plus /> <span>Hızlı Ekle</span>
-        </button>
+        <HardwareButton className="compact-action" tone="orange" compact onClick={onCapture} aria-label="Yeni kayıt"><Plus /> <span>Yeni kayıt</span></HardwareButton>
       </div>
     </div>
   );
@@ -548,134 +616,108 @@ function PageHeader({
   return (
     <header className="page-header">
       <div>
-        <span className="eyebrow"><span className="eyebrow-line" />{meta.eyebrow}</span>
         <h1>{meta.title}</h1>
         <p>{meta.description}</p>
       </div>
-      <button className="secondary-action page-quick-add" onClick={onCapture}>
-        <Plus /> Yeni Kayıt
-      </button>
+      <HardwareButton className="page-quick-add" tone="ivory" compact onClick={onCapture}><Plus /> Yeni Kayıt</HardwareButton>
     </header>
   );
 }
 
 function HomePage({
   state,
-  setState,
   toggleTask,
   openCapture,
   openProject,
   go,
 }: {
   state: PersonalOSState;
-  setState: React.Dispatch<React.SetStateAction<PersonalOSState>>;
   toggleTask: (id: string) => void;
   openCapture: (type: CaptureType) => void;
   openProject: (id: string) => void;
   go: (section: Section) => void;
 }) {
-  const [captureText, setCaptureText] = useState("");
-  const [captureType, setCaptureType] = useState<CaptureType>("task");
   const todayTasks = state.tasks.filter((task) => task.date === todayIso()).slice(0, 5);
-  const activeProjects = state.projects.filter((project) => project.status !== "done").slice(0, 3);
-
-  const submitQuickCapture = (event: FormEvent) => {
-    event.preventDefault();
-    const title = captureText.trim();
-    if (!title) return;
-    if (captureType === "task") {
-      const task: Task = { id: uid("task"), title, category: "todo", completed: false, priority: "medium", date: todayIso(), subtasks: [] };
-      setState((current) => ({ ...current, tasks: [task, ...current.tasks] }));
-    } else if (captureType === "project") {
-      const project: Project = {
-        id: uid("project"), title: title.toUpperCase(), category: "YENİ MİSYON", description: "Hızlı yakalamadan oluşturuldu.", status: "backlog", priority: "medium", startDate: todayIso(), progress: 0, tags: [], nextAction: "İlk somut adımı tanımla", subtasks: [],
-      };
-      setState((current) => ({ ...current, projects: [project, ...current.projects] }));
-    } else {
-      const note: Note = {
-        id: uid("note"), title, folder: captureType === "work" ? "İŞ / Hızlı Not" : captureType === "research" ? "ARAŞTIRMA / Gelen Kutusu" : "GELEN KUTUSU", content: "", tags: captureType === "research" ? ["araştırma"] : [], favorite: false, archived: false, updatedAt: todayIso(),
-      };
-      setState((current) => ({ ...current, notes: [note, ...current.notes] }));
-    }
-    setCaptureText("");
-  };
+  const allActiveProjects = state.projects.filter((project) => project.status !== "done");
+  const activeProjects = allActiveProjects.slice(0, 3);
+  const weeklyScore = Math.round(
+    state.weeklyTargets.reduce((sum, item) => sum + Math.min(item.current / item.target, 1), 0)
+      / state.weeklyTargets.length * 100,
+  );
+  const primaryTask = todayTasks.find((task) => !task.completed) ?? todayTasks[0];
+  const openTaskCount = state.tasks.filter((task) => !task.completed).length;
 
   return (
-    <div className="home-grid">
-      <section className="panel today-panel">
-        <SectionTitle code="TODAY" title="Bugünün rotası" action="Tüm görevler" onAction={() => go("tasks")} />
-        <div className="task-stack">
-          {todayTasks.length ? todayTasks.map((task) => (
-            <TaskRow key={task.id} task={task} onToggle={() => toggleTask(task.id)} project={state.projects.find((project) => project.id === task.projectId)} />
-          )) : (
-            <EmptyState icon={SunMedium} title="BUGÜN AÇIK GÖREV YOK" text="İstersen günün ilk net adımını ekle." action="Görev ekle" onAction={() => openCapture("task")} />
-          )}
+    <div className="home-minimal">
+      <header className="home-utility-head">
+        <div>
+          <span>{new Intl.DateTimeFormat("tr-TR", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}</span>
+          <h1>Bugün</h1>
         </div>
-      </section>
+        <button className="home-add-action" onClick={() => openCapture("task")}><Plus /> Yeni görev</button>
+      </header>
 
-      <section className="panel quick-capture-panel">
-        <SectionTitle code="CAPTURE" title="Hızlı yakala" />
-        <form className="capture-form" onSubmit={submitQuickCapture}>
-          <label htmlFor="quick-capture">Aklında ne var?</label>
-          <textarea id="quick-capture" value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder="Bir sonraki görev, fikir veya araştırma sorusu…" rows={3} />
-          <div className="capture-types" aria-label="Kayıt türü">
-            {([
-              ["task", "Görev"], ["note", "Not"], ["project", "Proje"], ["work", "İş notu"], ["research", "Araştırma"],
-            ] as [CaptureType, string][]).map(([type, label]) => (
-              <button key={type} type="button" className={captureType === type ? "is-active" : ""} onClick={() => setCaptureType(type)}>{label}</button>
+      <nav className="home-status-rail" aria-label="Güncel sistem özeti">
+        <button onClick={() => go("tasks")}><span>Açık görev</span><strong>{openTaskCount}</strong><ArrowRight /></button>
+        <button onClick={() => go("projects")}><span>Aktif proje</span><strong>{allActiveProjects.length}</strong><ArrowRight /></button>
+        <button onClick={() => go("career")}><span>Haftalık ritim</span><strong>%{weeklyScore}</strong><ArrowRight /></button>
+      </nav>
+
+      <div className="home-work-grid">
+        <div className="home-left-stack">
+          <section className="depth-surface today-surface">
+            <div className="surface-head">
+              <div><span>01</span><h2>Görevler</h2></div>
+              <button onClick={() => openCapture("task")} aria-label="Görev ekle"><Plus /></button>
+            </div>
+
+            {primaryTask && (
+              <button className="next-task" onClick={() => toggleTask(primaryTask.id)}>
+                <span>{primaryTask.completed ? <Check /> : <Circle />}</span>
+                <div><small>Sıradaki</small><strong>{primaryTask.title}</strong></div>
+                {primaryTask.time && <time>{primaryTask.time}</time>}
+              </button>
+            )}
+
+            <div className="home-task-list">
+              {todayTasks.length ? todayTasks.filter((task) => task.id !== primaryTask?.id).map((task) => (
+                <TaskRow key={task.id} task={task} onToggle={() => toggleTask(task.id)} project={state.projects.find((project) => project.id === task.projectId)} />
+              )) : (
+                <div className="inline-empty"><SunMedium /><div><strong>Bugün boş</strong><span>İlk görevi ekleyebilirsin.</span></div><button onClick={() => openCapture("task")}><Plus /></button></div>
+              )}
+            </div>
+            <button className="surface-link" onClick={() => go("tasks")}>Tüm görevler <ArrowRight /></button>
+          </section>
+
+          <section className="depth-surface rhythm-surface">
+            <div className="surface-head">
+              <div><span>03</span><h2>Bu hafta</h2></div>
+              <button onClick={() => go("career")} aria-label="Haftalık görünümü aç"><ArrowRight /></button>
+            </div>
+            <div className="rhythm-content">
+              <strong className="rhythm-score">{weeklyScore}<small>%</small></strong>
+              <div className="rhythm-targets">{state.weeklyTargets.slice(0, 4).map((target) => <WeeklyTargetMini key={target.id} target={target} />)}</div>
+            </div>
+          </section>
+        </div>
+
+        <section className="depth-surface project-surface">
+          <div className="surface-head">
+            <div><span>02</span><h2>Projeler</h2></div>
+            <button onClick={() => go("projects")} aria-label="Tüm projeleri aç"><ArrowRight /></button>
+          </div>
+          <div className="home-project-list">
+            {activeProjects.map((project, index) => (
+              <button key={project.id} onClick={() => openProject(project.id)}>
+                <span className={`project-index tone-${index + 1}`}>{(index + 1).toString().padStart(2, "0")}</span>
+                <span className="project-compact-copy"><small>{project.category}</small><strong>{project.title}</strong><em>{project.nextAction}</em></span>
+                <span className="project-compact-progress"><i style={{ "--project-progress": `${project.progress}%` } as React.CSSProperties} /><b>{project.progress}%</b></span>
+              </button>
             ))}
           </div>
-          <div className="capture-submit-row">
-            <span>Ctrl + Enter ile hızlı kayıt</span>
-            <button className="primary-action" type="submit" disabled={!captureText.trim()}><Plus /> Kaydet</button>
-          </div>
-        </form>
-      </section>
-
-      <section className="panel missions-panel">
-        <SectionTitle code="MISSIONS" title="Aktif projeler" action="Proje panosu" onAction={() => go("projects")} />
-        <div className="mission-list">
-          {activeProjects.map((project, index) => (
-            <button className="mission-row" key={project.id} onClick={() => openProject(project.id)}>
-              <span className="mission-index">0{index + 1}</span>
-              <div className="mission-main">
-                <span className="mission-category">{project.category}</span>
-                <strong>{project.title}</strong>
-                <div className="mission-next"><span>NEXT</span>{project.nextAction}</div>
-              </div>
-              <div className="mission-progress-wrap">
-                <strong>{project.progress}%</strong>
-                <Meter value={project.progress} />
-                <small>{project.dueDate ? formatDate(project.dueDate) : "Açık tarih"}</small>
-              </div>
-              <ArrowRight className="mission-arrow" />
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel week-panel">
-        <SectionTitle code="WEEK 01" title="Bu hafta" action="Rebuild'i aç" onAction={() => go("career")} />
-        <div className="week-summary">
-          <div className="week-score">
-            <span>GENEL RİTİM</span>
-            <strong>{Math.round(state.weeklyTargets.reduce((sum, item) => sum + Math.min(item.current / item.target, 1), 0) / state.weeklyTargets.length * 100)}%</strong>
-            <small>Sonuç değil, yön göstergesi</small>
-          </div>
-          <div className="week-target-grid">
-            {state.weeklyTargets.slice(0, 6).map((target) => <WeeklyTargetMini key={target.id} target={target} />)}
-          </div>
-        </div>
-      </section>
-
-      <section className="panel continue-panel">
-        <SectionTitle code="CONTINUE" title="Buradan devam et" />
-        <div className="continue-grid">
-          <ContinueItem icon={Orbit} kicker="PROJE" title="Orbit Explorer" detail="Hız görselleştirmesini uygula" action={() => openProject("project-orbit")} />
-          <ContinueItem icon={Languages} kicker="ENGLISH" title="15 dakikalık anlatım" detail="Titan atmosferini İngilizce açıkla" action={() => go("career")} />
-          <ContinueItem icon={Telescope} kicker="MERAK" title="Haftalık araştırma" detail="Somut bir soruyla yeni misyon başlat" action={() => go("career")} />
-        </div>
-      </section>
+          <button className="surface-link" onClick={() => openCapture("project")}><Plus /> Proje ekle</button>
+        </section>
+      </div>
     </div>
   );
 }
@@ -714,16 +756,6 @@ function WeeklyTargetMini({ target }: { target: WeeklyTarget }) {
       <div className="target-track"><span style={{ width: `${ratio}%` }} /></div>
       <small>{target.unit}</small>
     </div>
-  );
-}
-
-function ContinueItem({ icon: Icon, kicker, title, detail, action }: { icon: LucideIcon; kicker: string; title: string; detail: string; action: () => void }) {
-  return (
-    <button className="continue-item" onClick={action}>
-      <span className="continue-icon"><Icon /></span>
-      <span className="continue-copy"><small>{kicker}</small><strong>{title}</strong><span>{detail}</span></span>
-      <ArrowRight />
-    </button>
   );
 }
 
@@ -781,7 +813,8 @@ function ProjectsPage({
                 </div>
                 <div className="column-cards">
                   {cards.map((project) => (
-                    <article
+                    <button
+                      type="button"
                       className="project-card"
                       key={project.id}
                       draggable
@@ -797,7 +830,7 @@ function ProjectsPage({
                         <span><CheckCircle2 />{project.subtasks.filter((item) => item.completed).length}/{project.subtasks.length}</span>
                         {project.dueDate && <span><CalendarDays />{formatDate(project.dueDate)}</span>}
                       </div>
-                    </article>
+                    </button>
                   ))}
                   {!cards.length && <button className="column-empty" onClick={openCapture}><Plus /> İlk misyonu ekle</button>}
                 </div>
@@ -1089,25 +1122,31 @@ function WorkPage({ state, setState, openCapture }: { state: PersonalOSState; se
 function NotesPage({ state, setState, openCapture }: { state: PersonalOSState; setState: React.Dispatch<React.SetStateAction<PersonalOSState>>; openCapture: () => void }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(state.notes[0]?.id ?? "");
+  const [mobilePane, setMobilePane] = useState<"folders" | "list" | "editor">("list");
   const folders = Array.from(new Set(state.notes.map((note) => note.folder.split(" / ")[0])));
   const [folder, setFolder] = useState<string>("TÜMÜ");
-  const visible = state.notes.filter((note) => !note.archived && (folder === "TÜMÜ" || note.folder.startsWith(folder)) && `${note.title} ${note.content} ${note.tags.join(" ")}`.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")));
+  const visible = state.notes.filter((note) => !note.archived && (folder === "TÜMÜ" || (folder === "FAVORİLER" ? note.favorite : note.folder.startsWith(folder))) && `${note.title} ${note.content} ${note.tags.join(" ")}`.toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR")));
   const selected = state.notes.find((note) => note.id === selectedId) ?? visible[0];
   const updateSelected = (updates: Partial<Note>) => selected && setState((current) => ({ ...current, notes: current.notes.map((note) => note.id === selected.id ? { ...note, ...updates, updatedAt: todayIso() } : note) }));
 
   return (
-    <div className="notes-layout">
+    <div className="notes-layout" data-mobile-pane={mobilePane}>
+      <div className="notes-mobile-switch" aria-label="Not görünümü">
+        <button className={mobilePane === "folders" ? "is-active" : ""} onClick={() => setMobilePane("folders")}><Folder /> Klasörler</button>
+        <button className={mobilePane === "list" ? "is-active" : ""} onClick={() => setMobilePane("list")}><List /> Notlar</button>
+        <button className={mobilePane === "editor" ? "is-active" : ""} onClick={() => setMobilePane("editor")}><FileText /> Editör</button>
+      </div>
       <aside className="folder-tree">
         <div className="notes-search"><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Notlarda ara" /></div>
-        <button className={folder === "TÜMÜ" ? "is-active" : ""} onClick={() => setFolder("TÜMÜ")}><Folder />Tüm Notlar<span>{state.notes.filter((note) => !note.archived).length}</span></button>
-        <button className={folder === "FAVORİLER" ? "is-active" : ""} onClick={() => setFolder("FAVORİLER")}><Star />Favoriler<span>{state.notes.filter((note) => note.favorite).length}</span></button>
+        <button className={folder === "TÜMÜ" ? "is-active" : ""} onClick={() => { setFolder("TÜMÜ"); setMobilePane("list"); }}><Folder />Tüm Notlar<span>{state.notes.filter((note) => !note.archived).length}</span></button>
+        <button className={folder === "FAVORİLER" ? "is-active" : ""} onClick={() => { setFolder("FAVORİLER"); setMobilePane("list"); }}><Star />Favoriler<span>{state.notes.filter((note) => note.favorite).length}</span></button>
         <span className="tree-label">KLASÖRLER</span>
-        {folders.map((name) => <button key={name} className={folder === name ? "is-active" : ""} onClick={() => setFolder(name)}><ChevronRight />{name}<span>{state.notes.filter((note) => note.folder.startsWith(name)).length}</span></button>)}
+        {folders.map((name) => <button key={name} className={folder === name ? "is-active" : ""} onClick={() => { setFolder(name); setMobilePane("list"); }}><ChevronRight />{name}<span>{state.notes.filter((note) => note.folder.startsWith(name)).length}</span></button>)}
         <button className="inline-add folder-add" onClick={openCapture}><Plus />Yeni not</button>
       </aside>
       <section className="note-list-pane">
         <div className="note-list-header"><span>{folder}</span><strong>{visible.length} not</strong></div>
-        <div className="note-list">{visible.map((note) => <button key={note.id} className={selected?.id === note.id ? "is-active" : ""} onClick={() => setSelectedId(note.id)}><div><strong>{note.title}</strong>{note.favorite && <Star className="favorite-star" />}</div><p>{note.content.replace(/[#\[\]-]/g, "").slice(0, 92)}</p><span>{note.folder}</span><small>{formatDate(note.updatedAt)}</small></button>)}</div>
+        <div className="note-list">{visible.map((note) => <button key={note.id} className={selected?.id === note.id ? "is-active" : ""} onClick={() => { setSelectedId(note.id); setMobilePane("editor"); }}><div><strong>{note.title}</strong>{note.favorite && <Star className="favorite-star" />}</div><p>{note.content.replace(/[#[\]-]/g, "").slice(0, 92)}</p><span>{note.folder}</span><small>{formatDate(note.updatedAt)}</small></button>)}</div>
       </section>
       <section className="note-editor">
         {selected ? <>
@@ -1130,35 +1169,267 @@ function ArchivePage({ state }: { state: PersonalOSState }) {
 }
 
 function SettingsPage({ syncState, state }: { syncState: string; state: PersonalOSState }) {
-  return <div className="settings-grid"><section className="panel settings-section"><SectionTitle code="DATA" title="Kayıt ve senkronizasyon" /><div className="setting-row"><div><strong>Kalıcı kayıt</strong><span>Projeler, görevler, notlar ve haftalık geçmiş platform veritabanında tutulur.</span></div><span className={`setting-value is-${syncState}`}>{syncState === "saved" ? "AKTİF" : syncState === "offline" ? "ÖNİZLEME" : "İŞLENİYOR"}</span></div><div className="setting-row"><div><strong>Toplam kayıt</strong><span>{state.projects.length} proje · {state.tasks.length} görev · {state.notes.length} not</span></div><span className="setting-value">V1</span></div></section><section className="panel settings-section"><SectionTitle code="PREFERENCES" title="Arayüz tercihleri" /><div className="setting-row"><div><strong>Hareket azaltma</strong><span>Sistem cihazındaki erişilebilirlik tercihini otomatik izler.</span></div><span className="setting-value">OTOMATİK</span></div><div className="setting-row"><div><strong>Hafta başlangıcı</strong><span>Takvim ve haftalık sistem pazartesi günü başlar.</span></div><span className="setting-value">PAZARTESİ</span></div></section><section className="panel settings-section future-section"><SectionTitle code="FUTURE INTERFACE" title="AI için hazır, AI'a bağımlı değil" /><p>Sesli yakalama, doğal dil ayrıştırma, semantik arama ve haftalık plan asistanı için veri katmanı genişletilebilir durumda. Mevcut ürün tüm temel akışları yerel soru ve öneri bankalarıyla çalıştırır.</p></section></div>;
+  return <div className="settings-grid"><section className="panel settings-section"><SectionTitle code="DATA" title="Kayıt ve senkronizasyon" /><div className="setting-row"><div><strong>Kalıcı kayıt</strong><span>Projeler, görevler, notlar ve haftalık geçmiş platform veritabanında tutulur.</span></div><span className={`setting-value is-${syncState}`}>{syncState === "saved" ? "AKTİF" : syncState === "offline" ? "ÖNİZLEME" : "İŞLENİYOR"}</span></div><div className="setting-row"><div><strong>Toplam kayıt</strong><span>{state.projects.length} proje · {state.tasks.length} görev · {state.notes.length} not</span></div><span className="setting-value">V1</span></div></section><section className="panel settings-section"><SectionTitle code="PREFERENCES" title="Arayüz tercihleri" /><div className="setting-row"><div><strong>Hareket azaltma</strong><span>Sistem cihazındaki erişilebilirlik tercihini otomatik izler.</span></div><span className="setting-value">OTOMATİK</span></div><div className="setting-row"><div><strong>Hafta başlangıcı</strong><span>Takvim ve haftalık sistem pazartesi günü başlar.</span></div><span className="setting-value">PAZARTESİ</span></div></section><section className="panel settings-section future-section"><SectionTitle code="SMART CAPTURE" title="Akıllı ve sesli yakalama" /><p>Yeni kayıt ekranında Türkçe sesle yazabilir; uzun ve karışık bir metni görev, proje, iş, not, araştırma, alınacak ve gezilecek maddelerine ayırarak tek seferde kaydedebilirsin.</p></section></div>;
 }
 
 function ProjectDrawer({ project, onClose, onToggleSubtask, setState }: { project: Project; onClose: () => void; onToggleSubtask: (id: string) => void; setState: React.Dispatch<React.SetStateAction<PersonalOSState>> }) {
   const [newSubtask, setNewSubtask] = useState("");
   const addSubtask = (event: FormEvent) => { event.preventDefault(); if (!newSubtask.trim()) return; setState((current) => ({ ...current, projects: current.projects.map((item) => item.id === project.id ? { ...item, subtasks: [...item.subtasks, { id: uid("sub"), title: newSubtask.trim(), completed: false }] } : item) })); setNewSubtask(""); };
   const updateStatus = (status: ProjectStatus) => setState((current) => ({ ...current, projects: current.projects.map((item) => item.id === project.id ? { ...item, status } : item) }));
-  return <div className="overlay drawer-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="project-drawer" role="dialog" aria-modal="true" aria-label={`${project.title} proje ayrıntıları`}><div className="drawer-top"><span>{project.category}</span><button className="icon-button" onClick={onClose}><X /></button></div><h2>{project.title}</h2><p className="drawer-description">{project.description}</p><div className="drawer-facts"><div><span>DURUM</span><select value={project.status} onChange={(event) => updateStatus(event.target.value as ProjectStatus)}>{(Object.keys(statusLabels) as ProjectStatus[]).map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></div><div><span>ÖNCELİK</span><strong>{priorityLabels[project.priority]}</strong></div><div><span>BAŞLANGIÇ</span><strong>{formatDate(project.startDate)}</strong></div><div><span>SON TARİH</span><strong>{project.dueDate ? formatDate(project.dueDate) : "Açık"}</strong></div></div><div className="drawer-progress"><div><span>GENEL İLERLEME</span><strong>{project.progress}%</strong></div><Meter value={project.progress} /></div><section className="drawer-section"><span className="drawer-label">SONRAKİ NET ADIM</span><div className="next-action-callout"><Target /><strong>{project.nextAction}</strong></div></section><section className="drawer-section"><div className="drawer-section-title"><span>ALT GÖREVLER</span><strong>{project.subtasks.filter((item) => item.completed).length}/{project.subtasks.length}</strong></div><div className="drawer-subtasks">{project.subtasks.map((subtask) => <button key={subtask.id} className={subtask.completed ? "is-complete" : ""} onClick={() => onToggleSubtask(subtask.id)}>{subtask.completed ? <CheckCircle2 /> : <Circle />}<span>{subtask.title}</span></button>)}</div><form className="subtask-form" onSubmit={addSubtask}><input value={newSubtask} onChange={(event) => setNewSubtask(event.target.value)} placeholder="Alt görev ekle…" /><button className="icon-button primary-icon"><Plus /></button></form></section>{project.notes && <section className="drawer-section"><span className="drawer-label">NOTLAR</span><p className="drawer-note">{project.notes}</p></section>}<div className="drawer-tags">{project.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div></aside></div>;
+  // The backdrop deliberately closes on pointer-down; the drawer itself exposes a labeled native close button.
+  // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+  return <div className="overlay drawer-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="project-drawer" role="dialog" aria-modal="true" aria-label={`${project.title} proje ayrıntıları`}><div className="drawer-top"><span>{project.category}</span><button className="icon-button" onClick={onClose} aria-label="Proje ayrıntılarını kapat"><X /></button></div><h2>{project.title}</h2><p className="drawer-description">{project.description}</p><div className="drawer-facts"><div><span>DURUM</span><select value={project.status} onChange={(event) => updateStatus(event.target.value as ProjectStatus)}>{(Object.keys(statusLabels) as ProjectStatus[]).map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></div><div><span>ÖNCELİK</span><strong>{priorityLabels[project.priority]}</strong></div><div><span>BAŞLANGIÇ</span><strong>{formatDate(project.startDate)}</strong></div><div><span>SON TARİH</span><strong>{project.dueDate ? formatDate(project.dueDate) : "Açık"}</strong></div></div><div className="drawer-progress"><div><span>GENEL İLERLEME</span><strong>{project.progress}%</strong></div><Meter value={project.progress} /></div><section className="drawer-section"><span className="drawer-label">SONRAKİ NET ADIM</span><div className="next-action-callout"><Target /><strong>{project.nextAction}</strong></div></section><section className="drawer-section"><div className="drawer-section-title"><span>ALT GÖREVLER</span><strong>{project.subtasks.filter((item) => item.completed).length}/{project.subtasks.length}</strong></div><div className="drawer-subtasks">{project.subtasks.map((subtask) => <button key={subtask.id} className={subtask.completed ? "is-complete" : ""} onClick={() => onToggleSubtask(subtask.id)}>{subtask.completed ? <CheckCircle2 /> : <Circle />}<span>{subtask.title}</span></button>)}</div><form className="subtask-form" onSubmit={addSubtask}><input value={newSubtask} onChange={(event) => setNewSubtask(event.target.value)} placeholder="Alt görev ekle…" /><button className="icon-button primary-icon"><Plus /></button></form></section>{project.notes && <section className="drawer-section"><span className="drawer-label">NOTLAR</span><p className="drawer-note">{project.notes}</p></section>}<div className="drawer-tags">{project.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div></aside></div>;
 }
 
-function CaptureDialog({ type, setType, state, setState, onClose }: { type: CaptureType; setType: (type: CaptureType) => void; state: PersonalOSState; setState: React.Dispatch<React.SetStateAction<PersonalOSState>>; onClose: () => void }) {
+function CaptureDialog({ type, initialMode, setType, state, setState, onClose }: { type: CaptureType; initialMode: "single" | "organize"; setType: (type: CaptureType) => void; state: PersonalOSState; setState: React.Dispatch<React.SetStateAction<PersonalOSState>>; onClose: () => void }) {
+  const [mode, setMode] = useState<"single" | "organize">(initialMode);
   const [title, setTitle] = useState("");
   const [detail, setDetail] = useState("");
   const [date, setDate] = useState(todayIso());
   const [priority, setPriority] = useState<Priority>("medium");
   const [projectId, setProjectId] = useState("");
+  const [smartInput, setSmartInput] = useState("");
+  const [organized, setOrganized] = useState<OrganizedCapture[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [speechError, setSpeechError] = useState("");
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => () => recognitionRef.current?.stop(), []);
+
+  useEffect(() => {
+    if (mode === "single") titleInputRef.current?.focus();
+  }, [mode]);
+
+  const stopListening = () => {
+    recognitionRef.current?.stop();
+    recognitionRef.current = null;
+    setIsListening(false);
+  };
+
+  const toggleVoiceCapture = () => {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: SpeechRecognitionConstructor;
+      webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setSpeechError("Bu tarayıcı sesle yazmayı desteklemiyor. Chrome veya Edge ile deneyebilirsin.");
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = "tr-TR";
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        if (event.results[index].isFinal) transcript += `${event.results[index][0].transcript.trim()} `;
+      }
+      const clean = transcript.trim();
+      if (!clean) return;
+      if (mode === "organize") {
+        setSmartInput((current) => `${current}${current.trim() ? "\n" : ""}${clean}`);
+      } else {
+        setTitle((current) => current.trim() || clean.split(/[.!?]/)[0].slice(0, 90));
+        setDetail((current) => `${current}${current.trim() ? " " : ""}${clean}`);
+      }
+      setSpeechError("");
+    };
+    recognition.onerror = () => {
+      setSpeechError("Ses alınamadı. Mikrofon iznini kontrol edip tekrar deneyebilirsin.");
+      setIsListening(false);
+    };
+    recognition.onend = () => {
+      recognitionRef.current = null;
+      setIsListening(false);
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setSpeechError("");
+    setIsListening(true);
+  };
+
+  const prepareOrganizedItems = () => {
+    const next = organizeCaptureText(smartInput);
+    setOrganized(next);
+    if (!next.length) setSpeechError("Ayırabilmem için en az bir cümle veya madde yazmalısın.");
+    else setSpeechError("");
+  };
+
+  const updateOrganized = (id: string, updates: Partial<OrganizedCapture>) => {
+    setOrganized((current) => current.map((item) => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const saveOrganizedItems = () => {
+    const validItems = organized.filter((item) => item.title.trim());
+    if (!validItems.length) return;
+    const tasks: Task[] = [];
+    const projects: Project[] = [];
+    const notes: Note[] = [];
+    const workNotes: WorkNote[] = [];
+    const calendarItems: PersonalOSState["calendarItems"] = [];
+
+    validItems.forEach((item) => {
+      const itemDate = dateFromNaturalText(item.source, date);
+      if (item.destination === "task" || item.destination === "purchase" || item.destination === "place") {
+        const task: Task = {
+          id: uid("task"),
+          title: item.title.trim(),
+          category: item.destination === "purchase" ? "purchase" : item.destination === "place" ? "place" : "todo",
+          completed: false,
+          priority: "medium",
+          date: itemDate,
+          notes: item.detail,
+          subtasks: [],
+        };
+        tasks.push(task);
+        if (task.category === "todo") calendarItems.push({ id: uid("cal"), title: task.title, date: itemDate, type: "task" });
+      }
+      if (item.destination === "project") {
+        const project: Project = {
+          id: uid("project"),
+          title: item.title.trim().toUpperCase(),
+          category: "AKILLI GELEN KUTUSU",
+          description: item.detail || item.source,
+          status: "backlog",
+          priority: "medium",
+          startDate: todayIso(),
+          dueDate: itemDate,
+          progress: 0,
+          tags: ["yakalanan"],
+          nextAction: "İlk net adımı tanımla",
+          subtasks: [],
+        };
+        projects.push(project);
+      }
+      if (item.destination === "note" || item.destination === "research") {
+        notes.push({
+          id: uid("note"),
+          title: item.title.trim(),
+          folder: item.destination === "research" ? "ARAŞTIRMA / Gelen Kutusu" : "GELEN KUTUSU",
+          content: item.detail || item.source,
+          tags: item.destination === "research" ? ["araştırma", "yakalanan"] : ["yakalanan"],
+          favorite: false,
+          archived: false,
+          updatedAt: todayIso(),
+        });
+      }
+      if (item.destination === "work") {
+        workNotes.push({
+          id: uid("work"),
+          title: item.title.trim(),
+          workspace: "GENEL",
+          description: item.detail || item.source,
+          status: "Bekliyor",
+          priority: "medium",
+          date: itemDate,
+          checklist: [],
+        });
+      }
+    });
+
+    setState((current) => ({
+      ...current,
+      tasks: [...tasks, ...current.tasks],
+      projects: [...projects, ...current.projects],
+      notes: [...notes, ...current.notes],
+      workNotes: [...workNotes, ...current.workNotes],
+      calendarItems: [...calendarItems, ...current.calendarItems],
+    }));
+    onClose();
+  };
+
   const submit = (event: FormEvent) => {
-    event.preventDefault(); if (!title.trim()) return;
+    event.preventDefault();
+    if (mode === "organize") {
+      saveOrganizedItems();
+      return;
+    }
+    if (!title.trim()) return;
     if (type === "task") { const task: Task = { id: uid("task"), title: title.trim(), category: "todo", completed: false, priority, date, notes: detail, projectId: projectId || undefined, subtasks: [] }; setState((current) => ({ ...current, tasks: [task, ...current.tasks], calendarItems: [...current.calendarItems, { id: uid("cal"), title: task.title, date, type: projectId ? "project" : "task" }] })); }
     if (type === "project") { const project: Project = { id: uid("project"), title: title.trim().toUpperCase(), category: "YENİ MİSYON", description: detail || "Yeni proje", status: "backlog", priority, startDate: todayIso(), dueDate: date, progress: 0, tags: [], nextAction: "İlk somut adımı tanımla", subtasks: [] }; setState((current) => ({ ...current, projects: [project, ...current.projects] })); }
     if (type === "note" || type === "research") { const note: Note = { id: uid("note"), title: title.trim(), folder: type === "research" ? "ARAŞTIRMA / Gelen Kutusu" : "GELEN KUTUSU", content: detail, tags: type === "research" ? ["araştırma"] : [], favorite: false, archived: false, updatedAt: todayIso() }; setState((current) => ({ ...current, notes: [note, ...current.notes] })); }
     if (type === "work") { const note: WorkNote = { id: uid("work"), title: title.trim(), workspace: "GENEL", description: detail, status: "Bekliyor", priority, date, checklist: [] }; setState((current) => ({ ...current, workNotes: [note, ...current.workNotes] })); }
     onClose();
   };
-  return <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><form className="capture-dialog" onSubmit={submit} role="dialog" aria-modal="true"><div className="dialog-header"><div><span>HIZLI KAYIT</span><h2>Yeni bir şey ekle</h2></div><button type="button" className="icon-button" onClick={onClose}><X /></button></div><div className="dialog-type-tabs">{(["task", "note", "project", "work", "research"] as CaptureType[]).map((item) => <button type="button" key={item} className={type === item ? "is-active" : ""} onClick={() => setType(item)}>{item === "task" ? "Görev" : item === "note" ? "Not" : item === "project" ? "Proje" : item === "work" ? "İş notu" : "Araştırma"}</button>)}</div><label>Başlık<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder={type === "task" ? "Ne yapılacak?" : type === "project" ? "Misyonun adı" : "Kısa ve net başlık"} /></label><label>Açıklama<textarea value={detail} onChange={(event) => setDetail(event.target.value)} rows={4} placeholder="Bağlam, not veya ilk düşünce…" /></label>{type === "task" && <label>Proje ilişkisi<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Kişisel / proje yok</option>{state.projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>}{(type === "task" || type === "project" || type === "work") && <div className="dialog-two-col"><label>Tarih<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>Öncelik<select value={priority} onChange={(event) => setPriority(event.target.value as Priority)}><option value="low">Düşük</option><option value="medium">Normal</option><option value="high">Yüksek</option></select></label></div>}<div className="dialog-actions"><button type="button" className="secondary-action" onClick={onClose}>Vazgeç</button><button className="primary-action" disabled={!title.trim()}><Plus /> Kaydı oluştur</button></div></form></div>;
+
+  const moveSingleTextToOrganizer = () => {
+    setSmartInput([title, detail].filter(Boolean).join("\n"));
+    setMode("organize");
+    setOrganized([]);
+  };
+
+  return (
+    <div className="overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <form className={classNames("capture-dialog", mode === "organize" && "is-smart-mode")} onSubmit={submit} role="dialog" aria-modal="true" aria-label="Yeni kayıt">
+        <div className="dialog-header">
+          <div><span>GELEN KUTUSU</span><h2>{mode === "single" ? "Yeni kayıt" : "Düzenle ve dağıt"}</h2></div>
+          <div className="dialog-header-actions">
+            <button type="button" className={classNames("voice-capture-button", isListening && "is-listening")} onClick={toggleVoiceCapture} aria-pressed={isListening} aria-label={isListening ? "Ses kaydını durdur" : "Sesle yaz"}>
+              <Mic2 />
+              <span>{isListening ? "Dinliyorum" : "Sesle yaz"}</span>
+              {isListening && <i aria-hidden="true"><b /><b /><b /></i>}
+            </button>
+            <button type="button" className="icon-button dialog-close" onClick={onClose} aria-label="Yeni kaydı kapat"><X /></button>
+          </div>
+        </div>
+
+        <div className="capture-mode-switch" aria-label="Kayıt biçimi">
+          <button type="button" className={mode === "single" ? "is-active" : ""} onClick={() => setMode("single")}><Plus /> Tek kayıt</button>
+          <button type="button" className={mode === "organize" ? "is-active" : ""} onClick={() => setMode("organize")}><Sparkles /> Akıllı ayır</button>
+        </div>
+
+        {speechError && <div className="capture-feedback" role="status">{speechError}</div>}
+
+        {mode === "single" ? <>
+          <div className="dialog-type-tabs">{(["task", "note", "project", "work", "research"] as CaptureType[]).map((item) => <button type="button" key={item} className={type === item ? "is-active" : ""} onClick={() => setType(item)}>{item === "task" ? "Görev" : item === "note" ? "Not" : item === "project" ? "Proje" : item === "work" ? "İş notu" : "Araştırma"}</button>)}</div>
+          <label>Başlık<input ref={titleInputRef} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={type === "task" ? "Ne yapılacak?" : type === "project" ? "Projenin adı" : "Kısa ve net başlık"} /></label>
+          <label>Açıklama<textarea value={detail} onChange={(event) => setDetail(event.target.value)} rows={4} placeholder="Bağlam, not veya ilk düşünce…" /></label>
+          {(detail.length > 140 || detail.includes("\n")) && <button type="button" className="single-smart-suggestion" onClick={moveSingleTextToOrganizer}><Sparkles /><span><strong>Bu metni düzenle</strong><small>Maddelere ayır ve doğru bölümlere gönder</small></span><ArrowRight /></button>}
+          {type === "task" && <label>Proje ilişkisi<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">Kişisel / proje yok</option>{state.projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>}
+          {(type === "task" || type === "project" || type === "work") && <div className="dialog-two-col"><label>Tarih<input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label><label>Öncelik<select value={priority} onChange={(event) => setPriority(event.target.value as Priority)}><option value="low">Düşük</option><option value="medium">Normal</option><option value="high">Yüksek</option></select></label></div>}
+          <div className="dialog-actions"><button type="button" className="secondary-action" onClick={onClose}>Vazgeç</button><button className="primary-action" disabled={!title.trim()}><Plus /> Kaydı oluştur</button></div>
+        </> : <div className="smart-capture-flow">
+          <div className="smart-input-wrap">
+            <label htmlFor="smart-capture-input">Aklındaki her şeyi yaz veya söyle</label>
+            <p>Cümleleri temizleyip uygun bölümlere ayıracağım. Kaydetmeden önce hepsini değiştirebilirsin.</p>
+            <textarea id="smart-capture-input" value={smartInput} onChange={(event) => { setSmartInput(event.target.value); setOrganized([]); }} rows={7} placeholder={"Örnek:\nYarın müşteriye raporu gönder.\nTitan atmosferini araştır.\nMarketten kahve al.\nYeni portfolyo sitesi projesi başlat."} />
+            <div className="smart-input-footer"><span>{smartInput.length} karakter</span><button type="button" className="organize-action" onClick={prepareOrganizedItems} disabled={!smartInput.trim()}><Sparkles /> Düzenle ve ayır</button></div>
+          </div>
+
+          {organized.length ? <div className="organized-preview">
+            <div className="organized-preview-head"><div><strong>{organized.length} madde hazır</strong><span>Başlığı ve gideceği bölümü kontrol et.</span></div><button type="button" onClick={() => setOrganized([])}>Yeniden düzenle</button></div>
+            <div className="organized-list">{organized.map((item, index) => (
+              <article className="organized-item" key={item.id}>
+                <span className="organized-index">{(index + 1).toString().padStart(2, "0")}</span>
+                <div className="organized-fields">
+                  <input value={item.title} onChange={(event) => updateOrganized(item.id, { title: event.target.value })} aria-label={`${index + 1}. madde başlığı`} />
+                  <select value={item.destination} onChange={(event) => updateOrganized(item.id, { destination: event.target.value as SmartDestination })} aria-label={`${index + 1}. maddenin hedef bölümü`}>
+                    {(Object.keys(smartDestinationLabels) as SmartDestination[]).map((destination) => <option key={destination} value={destination}>{smartDestinationLabels[destination]}</option>)}
+                  </select>
+                </div>
+                <button type="button" className="organized-remove" onClick={() => setOrganized((current) => current.filter((entry) => entry.id !== item.id))} aria-label={`${item.title} maddesini kaldır`}><X /></button>
+              </article>
+            ))}</div>
+          </div> : <div className="smart-empty-guide"><span><Mic2 /></span><div><strong>Uzun ve karışık olabilir.</strong><p>Satır satır yazmak zorunda değilsin; sistem cümleleri ayırıp hedeflerini önerecek.</p></div></div>}
+
+          <div className="dialog-actions smart-actions"><button type="button" className="secondary-action" onClick={onClose}>Vazgeç</button><button className="primary-action" disabled={!organized.length}><Check /> {organized.length ? `${organized.length} kaydı bölümlere ekle` : "Önce metni düzenle"}</button></div>
+        </div>}
+      </form>
+    </div>
+  );
 }
 
 function CommandPalette({ state, onClose, go, openCapture, openProject }: { state: PersonalOSState; onClose: () => void; go: (section: Section) => void; openCapture: (type: CaptureType) => void; openProject: (id: string) => void }) {
   const [query, setQuery] = useState("");
+  const commandInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { commandInputRef.current?.focus(); }, []);
   const normalized = query.toLocaleLowerCase("tr-TR");
   const commands: { label: string; hint: string; icon: LucideIcon; action: () => void }[] = [
     { label: "Yeni görev", hint: "Görev oluştur", icon: ClipboardCheck, action: () => openCapture("task") },
@@ -1174,15 +1445,19 @@ function CommandPalette({ state, onClose, go, openCapture, openProject }: { stat
     ...state.notes.filter((item) => `${item.title} ${item.content}`.toLocaleLowerCase("tr-TR").includes(normalized)).map((item) => ({ id: item.id, type: "NOT", title: item.title, detail: item.folder, action: () => { onClose(); go("notes"); } })),
     ...state.workNotes.filter((item) => `${item.title} ${item.description}`.toLocaleLowerCase("tr-TR").includes(normalized)).map((item) => ({ id: item.id, type: "İŞ", title: item.title, detail: item.workspace, action: () => { onClose(); go("work"); } })),
   ].slice(0, 10) : [];
-  return <div className="overlay command-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="Komut paleti"><div className="command-search"><Search /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ara veya bir komut yaz…" /><kbd>ESC</kbd></div><div className="command-results">{normalized ? <><span className="command-group-label">ARAMA SONUÇLARI</span>{searchResults.map((result) => <button key={`${result.type}-${result.id}`} onClick={result.action}><span className="result-type">{result.type}</span><span><strong>{result.title}</strong><small>{result.detail}</small></span><ArrowRight /></button>)}{!searchResults.length && <EmptyState icon={Search} title="SONUÇ BULUNAMADI" text="Başka bir kelime veya daha kısa bir ifade dene." />}</> : <><span className="command-group-label">HIZLI KOMUTLAR</span>{commands.map((command) => { const Icon = command.icon; return <button key={command.label} onClick={command.action}><span className="command-icon"><Icon /></span><span><strong>{command.label}</strong><small>{command.hint}</small></span><ArrowRight /></button>; })}</>}</div><div className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> gezin</span><span><kbd>↵</kbd> aç</span><span>Personal OS araması</span></div></div></div>;
+  // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+  return <div className="overlay command-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="command-dialog" role="dialog" aria-modal="true" aria-label="Komut paleti"><div className="command-search"><Search /><input ref={commandInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ara veya bir komut yaz…" /><kbd>ESC</kbd></div><div className="command-results">{normalized ? <><span className="command-group-label">ARAMA SONUÇLARI</span>{searchResults.map((result) => <button key={`${result.type}-${result.id}`} onClick={result.action}><span className="result-type">{result.type}</span><span><strong>{result.title}</strong><small>{result.detail}</small></span><ArrowRight /></button>)}{!searchResults.length && <EmptyState icon={Search} title="SONUÇ BULUNAMADI" text="Başka bir kelime veya daha kısa bir ifade dene." />}</> : <><span className="command-group-label">HIZLI KOMUTLAR</span>{commands.map((command) => { const Icon = command.icon; return <button key={command.label} onClick={command.action}><span className="command-icon"><Icon /></span><span><strong>{command.label}</strong><small>{command.hint}</small></span><ArrowRight /></button>; })}</>}</div><div className="command-footer"><span><kbd>↑</kbd><kbd>↓</kbd> gezin</span><span><kbd>↵</kbd> aç</span><span>Personal OS araması</span></div></div></div>;
 }
 
-function MobileNav({ active, go }: { active: Section; go: (section: Section) => void }) {
-  const items = navPrimary.slice(0, 5);
-  return <nav className="mobile-nav" aria-label="Mobil navigasyon">{items.map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "is-active" : ""} onClick={() => go(item.id)}><Icon /><span>{item.id === "home" ? "Ana" : item.label}</span></button>; })}</nav>;
+function MobileNav({ active, go, onCapture }: { active: Section; go: (section: Section) => void; onCapture: () => void }) {
+  const items = navPrimary.filter((item) => ["home", "tasks", "projects", "notes"].includes(item.id));
+  return <nav className="mobile-nav" aria-label="Mobil navigasyon">
+    {items.slice(0, 2).map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "is-active" : ""} onClick={() => go(item.id)}><Icon /><span>{item.id === "home" ? "Ana" : item.label}</span></button>; })}
+    <button className="capture-nav-action" onClick={onCapture} aria-label="Yeni kayıt"><span><Plus /></span><b>Ekle</b></button>
+    {items.slice(2).map((item) => { const Icon = item.icon; return <button key={item.id} className={active === item.id ? "is-active" : ""} onClick={() => go(item.id)}><Icon /><span>{item.label}</span></button>; })}
+  </nav>;
 }
 
 function EmptyState({ icon: Icon, title, text, action, onAction }: { icon: LucideIcon; title: string; text: string; action?: string; onAction?: () => void }) {
   return <div className="empty-state"><span className="empty-radar"><Icon /></span><strong>{title}</strong><p>{text}</p>{action && <button className="text-action" onClick={onAction}>{action}<ArrowRight /></button>}</div>;
 }
-

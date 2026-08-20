@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "./minimal.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -19,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const description =
-    "Daha fazla görev değil; daha ilginç bir hayat kurmak için retro-fütüristik kişisel işletim sistemi.";
+    "Görevleri, projeleri ve bilgiyi tek bir sakin çalışma alanında birleştiren kişisel işletim sistemi.";
 
   return {
     metadataBase: new URL(origin),
