@@ -1,4 +1,4 @@
-import type { PersonalOSState } from "./types";
+import type { PersonalOSState } from "./types.ts";
 
 const id = (prefix: string, index: number) => `${prefix}-${index.toString().padStart(3, "0")}`;
 
@@ -11,7 +11,7 @@ function isoDate(offset = 0) {
 
 export function createSeedState(): PersonalOSState {
   return {
-    version: 1,
+    version: 2,
     projects: [
       {
         id: "project-orbit",
@@ -337,6 +337,28 @@ export function createSeedState(): PersonalOSState {
       { id: "log-3", area: "creative", title: "Orbit Explorer arayüzü", date: isoDate(-1), duration: 90 },
     ],
     recentQuestionIds: ["q-space-1", "q-tech-1", "q-design-2"],
+    weeklyPlans: [
+      {
+        id: "week-current",
+        weekStart: isoDate(-((new Date().getDay() + 6) % 7)),
+        targets: [
+          { id: "weekly-sport", label: "Spor", shortLabel: "SPOR", current: 1, target: 3, unit: "seans", tone: "green" },
+          { id: "weekly-english", label: "İngilizce", shortLabel: "ENGLISH", current: 2, target: 3, unit: "konuşma", tone: "cyan" },
+          { id: "weekly-diction", label: "Diksiyon", shortLabel: "DİKSİYON", current: 1, target: 3, unit: "kayıt", tone: "amber" },
+          { id: "weekly-curiosity", label: "Merak", shortLabel: "MERAK", current: 0, target: 1, unit: "misyon", tone: "amber" },
+          { id: "weekly-creative", label: "Yaratıcı", shortLabel: "YARATICI", current: 1.5, target: 3, unit: "saat", tone: "green" },
+          { id: "weekly-social", label: "Sosyal", shortLabel: "SOSYAL", current: 1, target: 2, unit: "ortam", tone: "cyan" },
+          { id: "weekly-solo", label: "Solo keşif", shortLabel: "SOLO", current: 0, target: 1, unit: "çıkış", tone: "neutral" },
+          { id: "weekly-career", label: "Kariyer", shortLabel: "KARİYER", current: 1, target: 3, unit: "saat", tone: "green" },
+        ],
+        focus: "Ritmi geri kazan; performansı değil devamlılığı koru.",
+      },
+    ],
+    weeklySnapshots: [
+      { id: "snapshot-previous", weekStart: isoDate(-7), score: 71, targets: [], reflection: "Ritim kuruldu; yaratıcı süre sakin şekilde devam ediyor." },
+      { id: "snapshot-two-ago", weekStart: isoDate(-14), score: 64, targets: [], reflection: "Spor düzeni başladı ve ilk solo keşif tamamlandı." },
+    ],
+    preferences: { reduceMotion: false, weekStart: "monday" },
   };
 }
 

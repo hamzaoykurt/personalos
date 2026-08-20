@@ -26,8 +26,10 @@ test("server-renders the Personal OS command center", async () => {
 
   const html = await response.text();
   assert.match(html, /Personal OS/);
-  assert.match(html, />Bugün</);
-  assert.match(html, /Güncel sistem özeti/);
+  assert.match(html, />Bugün\.</);
+  assert.match(html, /Hızlı yakala/);
+  assert.match(html, />Devam et</);
+  assert.match(html, /Bu hafta/);
   assert.match(html, /Görevler/);
   assert.match(html, /Her yerde ara/);
   assert.doesNotMatch(html, /Bugün ne önemli\?|Aklındakini burada bırak/);
@@ -40,6 +42,32 @@ test("ships product-specific metadata and social preview", async () => {
   assert.match(html, /Hayat, Proje &amp; Bilgi Sistemi/);
   assert.match(html, /og\.png/);
   assert.match(html, /summary_large_image/);
+});
+
+test("server-renders every primary Personal OS section", async () => {
+  const expectations = {
+    "/projects": /ÜRETİM MERKEZİ/,
+    "/tasks": /GÜNLÜK OPERASYON/,
+    "/calendar": /ORTAK AJANDA/,
+    "/career": /REACTIVATION/,
+    "/work": /İŞ ALANI/,
+    "/notes": /BİLGİ ARŞİVİ/,
+    "/archive": /TAMAMLANANLAR/,
+    "/settings": /Kayıt durumu/,
+  };
+  for (const [path, expectation] of Object.entries(expectations)) {
+    const response = await render(path);
+    assert.equal(response.status, 200, path);
+    assert.match(await response.text(), expectation, path);
+  }
+});
+
+test("opens the diction recorder directly from its deep link", async () => {
+  const response = await render("/career?area=diction");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Kayda başla/);
+  assert.match(html, /Kayıt arşivi/);
 });
 
 test("starter preview directory is removed", async () => {

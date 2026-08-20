@@ -1,6 +1,7 @@
 export type ProjectStatus = "backlog" | "todo" | "progress" | "review" | "done";
 export type Priority = "low" | "medium" | "high";
 export type TaskCategory = "todo" | "purchase" | "place";
+export type WeekStart = "monday" | "sunday";
 
 export type Subtask = {
   id: string;
@@ -23,6 +24,16 @@ export type Project = {
   subtasks: Subtask[];
   notes?: string;
   links?: string[];
+  activity?: ProjectActivity[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ProjectActivity = {
+  id: string;
+  type: "created" | "status" | "subtask" | "note" | "updated";
+  label: string;
+  at: string;
 };
 
 export type Task = {
@@ -42,6 +53,10 @@ export type Task = {
   placeType?: string;
   imageUrl?: string;
   subtasks: Subtask[];
+  createdAt?: string;
+  updatedAt?: string;
+  deferredUntil?: string;
+  completedAt?: string;
 };
 
 export type CalendarItem = {
@@ -124,6 +139,19 @@ export type ActivityLog = {
   date: string;
   duration?: number;
   note?: string;
+  score?: number;
+  tempo?: number;
+  clarity?: number;
+  fillerWords?: number;
+  confidence?: number;
+  recording?: VoiceRecording;
+};
+
+export type VoiceRecording = {
+  key: string;
+  mimeType: string;
+  size: number;
+  durationSeconds: number;
 };
 
 export type WeeklyHistory = {
@@ -133,8 +161,28 @@ export type WeeklyHistory = {
   summary: string;
 };
 
+export type WeeklyPlan = {
+  id: string;
+  weekStart: string;
+  targets: WeeklyTarget[];
+  focus?: string;
+};
+
+export type WeeklySnapshot = {
+  id: string;
+  weekStart: string;
+  score: number;
+  targets: WeeklyTarget[];
+  reflection?: string;
+};
+
+export type PersonalOSPreferences = {
+  reduceMotion: boolean;
+  weekStart: WeekStart;
+};
+
 export type PersonalOSState = {
-  version: 1;
+  version: 2;
   projects: Project[];
   tasks: Task[];
   calendarItems: CalendarItem[];
@@ -148,5 +196,8 @@ export type PersonalOSState = {
   spaceExperiments: SpaceExperiment[];
   activityLogs: ActivityLog[];
   recentQuestionIds: string[];
+  weeklyPlans: WeeklyPlan[];
+  weeklySnapshots: WeeklySnapshot[];
+  preferences: PersonalOSPreferences;
 };
 

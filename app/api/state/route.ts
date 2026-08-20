@@ -1,11 +1,12 @@
 import { env } from "cloudflare:workers";
 import { createSeedState } from "@/lib/seed";
+import { migrateState } from "@/lib/state";
 import type { PersonalOSState } from "@/lib/types";
 
 const createStateTable = `CREATE TABLE IF NOT EXISTS app_state (
   id INTEGER PRIMARY KEY,
   payload TEXT NOT NULL,
-  version INTEGER NOT NULL DEFAULT 1,
+  version INTEGER NOT NULL DEFAULT 2,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`;
 
@@ -22,7 +23,8 @@ export async function GET() {
       .first<{ payload: string; updated_at: string }>();
 
     if (row) {
-      return Response.json({ state: JSON.parse(row.payload), updatedAt: row.updated_at });
+      const state = migrateState(JSON.parse(row.payload));
+      return Response.json({ state, updatedAt: row.updated_at });
     }
 
     const state = createSeedState();
@@ -44,10 +46,10 @@ export async function GET() {
 export async function PUT(request: Request) {
   try {
     const body = (await request.json()) as { state?: PersonalOSState };
-    const state = body.state;
-    if (!state || state.version !== 1 || !Array.isArray(state.projects) || !Array.isArray(state.tasks)) {
+    if (!body.state || !Array.isArray(body.state.projects) || !Array.isArray(body.state.tasks)) {
       return Response.json({ error: "Geçersiz uygulama durumu" }, { status: 400 });
     }
+    const state = migrateState(body.state);
 
     await ensureStateTable();
     await env.DB.prepare(
