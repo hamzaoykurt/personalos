@@ -21,6 +21,20 @@ const themeBootScript = `(() => {
   }
 })();`;
 
+const pwaBootScript = `(() => {
+  if (window.__personalOSPwaBooted) return;
+  window.__personalOSPwaBooted = true;
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    window.__personalOSInstallPrompt = event;
+    window.dispatchEvent(new Event("personal-os-install-ready"));
+  });
+  window.addEventListener("appinstalled", () => {
+    window.__personalOSInstallPrompt = undefined;
+    window.dispatchEvent(new Event("personal-os-installed"));
+  });
+})();`;
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -97,6 +111,7 @@ export default function RootLayout({
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <script dangerouslySetInnerHTML={{ __html: pwaBootScript }} />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body

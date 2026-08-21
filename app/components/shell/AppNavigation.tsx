@@ -3,6 +3,7 @@
 import { Archive, BookOpen, BriefcaseBusiness, CalendarDays, ClipboardCheck, Menu, Mic2, Moon, Orbit, Plus, Radar, Rocket, Search, Settings, SunMedium, X, type LucideIcon } from "lucide-react";
 import type { Section } from "@/lib/navigation";
 import { sectionPaths } from "@/lib/navigation";
+import { PwaInstallShortcut } from "../pwa/InstallAppSetting";
 import { cx } from "../screens/ScreenKit";
 
 type Theme = "light" | "dark";
@@ -21,7 +22,7 @@ export function Sidebar({ active, open, go, close, capture, openVoiceRecorder, t
     <header><div className="os-brand-mark"><Orbit /><i /></div><div><strong>PERSONAL OS</strong><span>YAŞA · MERAK ET · ÜRET</span></div><button onClick={close} aria-label="Menüyü kapat"><X /></button></header>
     <button className="os-sidebar-capture" onClick={capture}><Plus /><span><strong>Hızlı yakala</strong><small>Aklındakini kaydet</small></span></button>
     <nav aria-label="Ana navigasyon">{groups.map((group) => <section key={group.label}><span>{group.label}</span>{group.items.map(render)}{group.label === "GELİŞ" && <button className="os-voice-shortcut" onClick={openVoiceRecorder}><Mic2 /><span><strong>Ses kaydı</strong><small>Diksiyon oturumu</small></span></button>}</section>)}</nav>
-    <footer><div className="os-phase-card"><span>AKTİF FAZ</span><strong>REACTIVATION</strong><i><b style={{ width: "34%" }} /></i><small>AY 1 / 6</small></div><div className="os-sidebar-utilities">{render({ id: "archive", label: "Arşiv", icon: Archive })}{render({ id: "settings", label: "Ayarlar", icon: Settings })}<button className="os-nav-link" onClick={toggleTheme}><span>{theme === "dark" ? <SunMedium /> : <Moon />}</span><strong>{theme === "dark" ? "Açık tema" : "Koyu tema"}</strong></button></div><div className={cx("os-sync-chip", `is-${syncState}`)}><i /><span>{syncState === "saved" ? "Kaydedildi" : syncState === "offline" ? "Çevrimdışı" : syncState === "saving" ? "Kaydediliyor" : "Yükleniyor"}</span></div></footer>
+    <footer><PwaInstallShortcut /><div className="os-phase-card"><span>AKTİF FAZ</span><strong>REACTIVATION</strong><i><b style={{ width: "34%" }} /></i><small>AY 1 / 6</small></div><div className="os-sidebar-utilities">{render({ id: "archive", label: "Arşiv", icon: Archive })}{render({ id: "settings", label: "Ayarlar", icon: Settings })}<button className="os-nav-link" onClick={toggleTheme}><span>{theme === "dark" ? <SunMedium /> : <Moon />}</span><strong>{theme === "dark" ? "Açık tema" : "Koyu tema"}</strong></button></div><div className={cx("os-sync-chip", `is-${syncState}`)}><i /><span>{syncState === "saved" ? "Kaydedildi" : syncState === "offline" ? "Çevrimdışı" : syncState === "saving" ? "Kaydediliyor" : "Yükleniyor"}</span></div></footer>
   </aside>;
 }
 

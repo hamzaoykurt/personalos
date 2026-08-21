@@ -68,12 +68,28 @@
   --home-surface: rgba(242, 237, 226, .94);
   --home-surface-strong: #faf5e9;
   --home-surface-soft: rgba(85, 62, 40, .06);
-  --home-text: #25221e;
-  --home-muted: #71695e;
-  --home-faint: #93897c;
-  --home-line: rgba(82, 60, 39, .13);
-  --home-line-bright: rgba(82, 60, 39, .2);
+  --home-text: #201f1b;
+  --home-muted: #5c574e;
+  --home-faint: #6f685d;
+  --home-line: rgba(82, 60, 39, .17);
+  --home-line-bright: rgba(82, 60, 39, .27);
 }
+
+:global(html[data-theme="light"]) :is(.captureIcon, .projectGlyph, .continueIcon) {
+  color: #93452b;
+  background: linear-gradient(145deg, rgba(161, 71, 39, .15), rgba(161, 71, 39, .055));
+  border-color: rgba(161, 71, 39, .22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+
+:global(html[data-theme="light"]) :is(.projectCard:nth-child(2) .projectGlyph, .continueList > button:nth-child(2) .continueIcon) {
+  color: #58703a;
+  background: linear-gradient(145deg, rgba(88, 112, 58, .15), rgba(88, 112, 58, .05));
+  border-color: rgba(88, 112, 58, .22);
+}
+
+:global(html[data-theme="light"]) .compactEmpty svg { color: #477254; }
+:global(html[data-theme="light"]) .weekRow > i b { background: linear-gradient(90deg, #a84b2c, #667a38); }
 
 .home :is(h1, h2, h3, strong, small, span, time, button) {
   font-family: inherit;

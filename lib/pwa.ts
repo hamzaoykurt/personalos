@@ -6,6 +6,8 @@ export type InstallPromptEvent = Event & {
 declare global {
   interface Window {
     __personalOSInstallPrompt?: InstallPromptEvent;
+    __personalOSPwaBooted?: boolean;
+    __personalOSPwaError?: string;
   }
 }
 

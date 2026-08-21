@@ -12,3 +12,5 @@ svg { display: block; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: #0b0d0c; }
 ::-webkit-scrollbar-thumb { background: #393830; border: 2px solid #0b0d0c; border-radius: 99px; }
+html[data-theme="light"] ::-webkit-scrollbar-track { background: #f2eee4; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #9e9586; border-color: #f2eee4; }

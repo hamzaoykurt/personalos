@@ -1,4 +1,4 @@
-const CACHE_NAME = "personal-os-v4";
+const CACHE_NAME = "personal-os-v6";
 const APP_ROUTES = ["/", "/projects", "/tasks", "/calendar", "/career", "/work", "/notes", "/archive", "/settings"];
 const CORE_ASSETS = ["/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png"];
 
@@ -8,6 +8,10 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (event) => {

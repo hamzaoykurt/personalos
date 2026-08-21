@@ -8,7 +8,7 @@ function isAppleMobile() {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-export default function InstallAppSetting() {
+function useInstallState() {
   const [installed, setInstalled] = useState(false);
   const [installable, setInstallable] = useState(false);
   const [apple, setApple] = useState(false);
@@ -28,20 +28,25 @@ export default function InstallAppSetting() {
     };
   }, []);
 
-  const install = async () => {
-    const prompt = window.__personalOSInstallPrompt;
-    if (!prompt) return;
-    await prompt.prompt();
-    const choice = await prompt.userChoice;
-    if (choice.outcome === "accepted") {
-      window.__personalOSInstallPrompt = undefined;
-      setInstallable(false);
-    }
-  };
+  return { installed, installable, apple };
+}
+
+function requestInstall() {
+  window.dispatchEvent(new Event("personal-os-install-request"));
+}
+
+export default function InstallAppSetting() {
+  const { installed, installable, apple } = useInstallState();
 
   if (installed) return <div className="os-setting-row"><span><Smartphone /><i><strong>Telefon uygulaması</strong><small>Personal OS bağımsız uygulama olarak çalışıyor</small></i></span><b>Yüklü</b></div>;
 
-  if (installable) return <button className="os-setting-row" onClick={install}><span><Download /><i><strong>Telefona yükle</strong><small>Ana ekrandan tam ekran aç</small></i></span><b>Yükle</b></button>;
+  if (installable) return <button className="os-setting-row" onClick={requestInstall}><span><Download /><i><strong>Telefona yükle</strong><small>Ana ekrandan tam ekran aç</small></i></span><b>Yükle</b></button>;
 
-  return <div className="os-setting-row"><span><Smartphone /><i><strong>Telefona yükle</strong><small>{apple ? "Paylaş → Ana Ekrana Ekle" : "Tarayıcı menüsü → Uygulamayı yükle"}</small></i></span><b>Hazır</b></div>;
+  return <button className="os-setting-row" onClick={requestInstall}><span><Smartphone /><i><strong>Telefona yükle</strong><small>{apple ? "Safari → Paylaş → Ana Ekrana Ekle" : "Tam Chrome'da açıp uygulamayı yükle"}</small></i></span><b>Nasıl?</b></button>;
+}
+
+export function PwaInstallShortcut() {
+  const { installed, installable } = useInstallState();
+  if (installed) return null;
+  return <button className="os-pwa-shortcut" onClick={requestInstall}><Download /><span><strong>Uygulamayı yükle</strong><small>{installable ? "Tek dokunuşla hazır" : "Ana ekranda tam ekran aç"}</small></span></button>;
 }
