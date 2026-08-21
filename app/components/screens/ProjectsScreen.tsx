@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, CalendarDays, Check, Columns3, List, Orbit, Plus } from "lucide-react";
+import { ArrowUpRight, CalendarDays, Check, ChevronDown, Columns3, List, Orbit, Plus } from "lucide-react";
 import { useState } from "react";
 import { projectProgress } from "@/lib/state";
 import type { PersonalOSState, Project, ProjectStatus } from "@/lib/types";
@@ -8,6 +8,13 @@ import { cx, EmptyView, formatDate, ProgressBar, ScreenHeader, uid } from "./Scr
 
 const columns: ProjectStatus[] = ["backlog", "todo", "progress", "review", "done"];
 const labels: Record<ProjectStatus, string> = { backlog: "Backlog", todo: "Yapılacak", progress: "Devam", review: "Kontrol", done: "Bitti" };
+
+function StatusSelect({ project, moveProject, board = false }: { project: Project; moveProject: (project: Project, status: ProjectStatus) => void; board?: boolean }) {
+  return <label className={cx("os-status-select", `is-${project.status}`, board && "is-board")}>
+    <span className="os-status-value" aria-hidden="true"><i /><b>{labels[project.status]}</b><ChevronDown /></span>
+    <select value={project.status} onChange={(event) => moveProject(project, event.target.value as ProjectStatus)} aria-label={`${project.title} durumunu değiştir`}>{columns.map((status) => <option value={status} key={status}>{labels[status]}</option>)}</select>
+  </label>;
+}
 
 export default function ProjectsScreen({ state, setState, openProject, openCapture }: {
   state: PersonalOSState;
@@ -53,7 +60,7 @@ export default function ProjectsScreen({ state, setState, openProject, openCaptu
             <span className="os-project-date">{project.dueDate ? <><CalendarDays />{formatDate(project.dueDate)}</> : "Açık"}</span>
             <ArrowUpRight className="os-project-arrow" />
           </button>
-          <label className="os-status-select"><span className="sr-only">{project.title} durumu</span><select value={project.status} onChange={(event) => moveProject(project, event.target.value as ProjectStatus)}>{columns.map((status) => <option value={status} key={status}>{labels[status]}</option>)}</select></label>
+          <StatusSelect project={project} moveProject={moveProject} />
         </article>;
       })}
       {!activeProjects.length && <EmptyView icon={Check} title="Aktif proje kalmadı" action="Yeni proje" onAction={openCapture} />}
@@ -70,7 +77,7 @@ export default function ProjectsScreen({ state, setState, openProject, openCaptu
             const progress = projectProgress(project);
             return <article className="os-inset-card os-board-card" draggable key={project.id} onDragStart={() => setDraggedId(project.id)} onDragEnd={() => setDraggedId(null)}>
               <button onClick={() => openProject(project.id)}><small>{project.category}</small><strong>{project.title}</strong><p>{project.nextAction}</p><span><ProgressBar value={progress} /><b>{project.subtasks.filter((item) => item.completed).length}/{project.subtasks.length || "–"}</b></span></button>
-              <select value={project.status} onChange={(event) => moveProject(project, event.target.value as ProjectStatus)} aria-label={`${project.title} durumunu değiştir`}>{columns.map((item) => <option key={item} value={item}>{labels[item]}</option>)}</select>
+              <StatusSelect project={project} moveProject={moveProject} board />
             </article>;
           })}<button className="os-board-add" onClick={openCapture}><Plus />Ekle</button></div>
         </section>)}
