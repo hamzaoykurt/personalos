@@ -1,23 +1,38 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, startTransition, Suspense, useEffect, useRef, useState } from "react";
 import { createSeedState } from "@/lib/seed";
 import { migrateState } from "@/lib/state";
 import { sectionMeta, sectionPaths, type CaptureType, type Section } from "@/lib/navigation";
 import type { PersonalOSState, TaskCategory, WorkNote } from "@/lib/types";
 import HomeScreen from "./home/HomeScreen";
-import ProjectsScreen from "./screens/ProjectsScreen";
-import TasksScreen from "./screens/TasksScreen";
-import CalendarScreen from "./screens/CalendarScreen";
-import RebuildScreen from "./screens/RebuildScreen";
-import WorkScreen from "./screens/WorkScreen";
-import NotesScreen from "./screens/NotesScreen";
-import ArchiveScreen from "./screens/ArchiveScreen";
-import SettingsScreen from "./screens/SettingsScreen";
 import { MobileNavigation, Sidebar, TopBar } from "./shell/AppNavigation";
-import CaptureSheet from "./overlays/CaptureSheet";
-import CommandPalette from "./overlays/CommandPalette";
-import ProjectDetailSheet from "./overlays/ProjectDetailSheet";
+
+const loadProjectsScreen = () => import("./screens/ProjectsScreen");
+const loadTasksScreen = () => import("./screens/TasksScreen");
+const loadCalendarScreen = () => import("./screens/CalendarScreen");
+const loadRebuildScreen = () => import("./screens/RebuildScreen");
+const loadWorkScreen = () => import("./screens/WorkScreen");
+const loadNotesScreen = () => import("./screens/NotesScreen");
+const loadArchiveScreen = () => import("./screens/ArchiveScreen");
+const loadSettingsScreen = () => import("./screens/SettingsScreen");
+const loadCaptureSheet = () => import("./overlays/CaptureSheet");
+const loadCommandPalette = () => import("./overlays/CommandPalette");
+const loadProjectDetailSheet = () => import("./overlays/ProjectDetailSheet");
+
+const ProjectsScreen = lazy(loadProjectsScreen);
+const TasksScreen = lazy(loadTasksScreen);
+const CalendarScreen = lazy(loadCalendarScreen);
+const RebuildScreen = lazy(loadRebuildScreen);
+const WorkScreen = lazy(loadWorkScreen);
+const NotesScreen = lazy(loadNotesScreen);
+const ArchiveScreen = lazy(loadArchiveScreen);
+const SettingsScreen = lazy(loadSettingsScreen);
+const CaptureSheet = lazy(loadCaptureSheet);
+const CommandPalette = lazy(loadCommandPalette);
+const ProjectDetailSheet = lazy(loadProjectDetailSheet);
+
+const deferredModules = [loadProjectsScreen, loadTasksScreen, loadCalendarScreen, loadRebuildScreen, loadWorkScreen, loadNotesScreen, loadArchiveScreen, loadSettingsScreen, loadCaptureSheet, loadCommandPalette, loadProjectDetailSheet];
 
 type Theme = "light" | "dark";
 type SyncState = "loading" | "saved" | "saving" | "offline";
@@ -44,6 +59,7 @@ export default function PersonalOS({ initialSection = "home", initialRebuildArea
   const [captureConfig, setCaptureConfig] = useState<CaptureConfig | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const pendingSave = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipNextSave = useRef(true);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("personal-os-theme") as Theme | null;
@@ -68,7 +84,29 @@ export default function PersonalOS({ initialSection = "home", initialRebuildArea
   }, []);
 
   useEffect(() => {
+    let preloaded = false;
+    const preload = () => {
+      if (preloaded) return;
+      preloaded = true;
+      for (const loadModule of deferredModules) void loadModule();
+    };
+    const timeoutId = window.setTimeout(preload, 400);
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(preload, { timeout: 700 });
+      return () => {
+        window.cancelIdleCallback(idleId);
+        window.clearTimeout(timeoutId);
+      };
+    }
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
     if (!hydrated) return;
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
     if (pendingSave.current) clearTimeout(pendingSave.current);
     queueMicrotask(() => setSyncState("saving"));
     pendingSave.current = setTimeout(() => {
@@ -93,13 +131,13 @@ export default function PersonalOS({ initialSection = "home", initialRebuildArea
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen((value) => !value); }
       if (event.key === "Escape") { setCommandOpen(false); setCaptureConfig(null); setSelectedProjectId(null); setMobileMenu(false); }
     };
-    const onPopState = () => setActiveSection(sectionFromPath(window.location.pathname));
+    const onPopState = () => startTransition(() => setActiveSection(sectionFromPath(window.location.pathname)));
     window.addEventListener("keydown", onKeyDown); window.addEventListener("popstate", onPopState);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("popstate", onPopState); };
   }, []);
 
   const go = (section: Section) => {
-    setActiveSection(section); setMobileMenu(false);
+    startTransition(() => setActiveSection(section)); setMobileMenu(false);
     if (window.location.pathname !== sectionPaths[section]) window.history.pushState({}, "", sectionPaths[section]);
     window.scrollTo({ top: 0, behavior: state.preferences.reduceMotion ? "auto" : "smooth" });
   };
@@ -109,7 +147,7 @@ export default function PersonalOS({ initialSection = "home", initialRebuildArea
   };
   const openCapture = (type: CaptureType = "task", options?: Partial<Omit<CaptureConfig, "type">>) => setCaptureConfig({ type, mode: "single", taskCategory: "todo", workspace: "GENEL", ...options });
   const openRebuildArea = (area: string) => {
-    setActiveSection("career"); setMobileMenu(false);
+    startTransition(() => setActiveSection("career")); setMobileMenu(false);
     const url = `/career?area=${encodeURIComponent(area)}`;
     if (`${window.location.pathname}${window.location.search}` !== url) window.history.pushState({}, "", url);
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -123,19 +161,23 @@ export default function PersonalOS({ initialSection = "home", initialRebuildArea
     <Sidebar active={activeSection} open={mobileMenu} go={go} close={() => setMobileMenu(false)} capture={() => openCapture("task", { mode: "organize" })} openVoiceRecorder={() => openRebuildArea("diction")} theme={theme} toggleTheme={toggleTheme} syncState={syncState} />
     {mobileMenu && <button className="os-menu-scrim" onClick={() => setMobileMenu(false)} aria-label="Menüyü kapat" />}
     <main className="os-main"><TopBar title={sectionMeta[activeSection].title} menu={() => setMobileMenu(true)} search={() => setCommandOpen(true)} capture={() => openCapture("task")} /><div className={activeSection === "home" ? "os-page os-home-page" : "os-page"}>
-      {activeSection === "home" && <HomeScreen state={state} toggleTask={toggleTask} openCapture={openCapture} openQuickCapture={() => openCapture("task", { mode: "organize" })} openProject={setSelectedProjectId} go={go} />}
-      {activeSection === "projects" && <ProjectsScreen state={state} setState={setState} openProject={setSelectedProjectId} openCapture={() => openCapture("project")} />}
-      {activeSection === "tasks" && <TasksScreen state={state} setState={setState} openCapture={(taskCategory) => openCapture("task", { taskCategory })} />}
-      {activeSection === "calendar" && <CalendarScreen state={state} setState={setState} openCapture={() => openCapture("task")} />}
-      {activeSection === "career" && <RebuildScreen state={state} setState={setState} go={go} initialArea={initialRebuildArea} />}
-      {activeSection === "work" && <WorkScreen state={state} setState={setState} openCapture={(workspace) => openCapture("work", { workspace })} />}
-      {activeSection === "notes" && <NotesScreen state={state} setState={setState} openCapture={() => openCapture("note")} />}
-      {activeSection === "archive" && <ArchiveScreen state={state} setState={setState} />}
-      {activeSection === "settings" && <SettingsScreen state={state} setState={setState} syncState={syncState} theme={theme} toggleTheme={toggleTheme} />}
+      <Suspense fallback={<div className="os-screen-loading" role="status"><i /><span>Bölüm hazırlanıyor</span></div>}>
+        {activeSection === "home" && <HomeScreen state={state} toggleTask={toggleTask} openCapture={openCapture} openQuickCapture={() => openCapture("task", { mode: "organize" })} openProject={setSelectedProjectId} go={go} />}
+        {activeSection === "projects" && <ProjectsScreen state={state} setState={setState} openProject={setSelectedProjectId} openCapture={() => openCapture("project")} />}
+        {activeSection === "tasks" && <TasksScreen state={state} setState={setState} openCapture={(taskCategory) => openCapture("task", { taskCategory })} />}
+        {activeSection === "calendar" && <CalendarScreen state={state} setState={setState} openCapture={() => openCapture("task")} />}
+        {activeSection === "career" && <RebuildScreen state={state} setState={setState} go={go} initialArea={initialRebuildArea} />}
+        {activeSection === "work" && <WorkScreen state={state} setState={setState} openCapture={(workspace) => openCapture("work", { workspace })} />}
+        {activeSection === "notes" && <NotesScreen state={state} setState={setState} openCapture={() => openCapture("note")} />}
+        {activeSection === "archive" && <ArchiveScreen state={state} setState={setState} />}
+        {activeSection === "settings" && <SettingsScreen state={state} setState={setState} syncState={syncState} theme={theme} toggleTheme={toggleTheme} />}
+      </Suspense>
     </div></main>
     <MobileNavigation active={activeSection} go={go} capture={() => openCapture("task", { mode: "organize" })} />
-    {commandOpen && <CommandPalette state={state} close={() => setCommandOpen(false)} go={go} capture={(type) => { setCommandOpen(false); openCapture(type); }} openProject={setSelectedProjectId} openRebuildArea={openRebuildArea} />}
-    {captureConfig && <CaptureSheet initialType={captureConfig.type} initialMode={captureConfig.mode} initialTaskCategory={captureConfig.taskCategory} initialWorkspace={captureConfig.workspace} state={state} setState={setState} close={() => setCaptureConfig(null)} />}
-    {selectedProject && <ProjectDetailSheet project={selectedProject} setState={setState} close={() => setSelectedProjectId(null)} />}
+    <Suspense fallback={null}>
+      {commandOpen && <CommandPalette state={state} close={() => setCommandOpen(false)} go={go} capture={(type) => { setCommandOpen(false); openCapture(type); }} openProject={setSelectedProjectId} openRebuildArea={openRebuildArea} />}
+      {captureConfig && <CaptureSheet initialType={captureConfig.type} initialMode={captureConfig.mode} initialTaskCategory={captureConfig.taskCategory} initialWorkspace={captureConfig.workspace} state={state} setState={setState} close={() => setCaptureConfig(null)} />}
+      {selectedProject && <ProjectDetailSheet project={selectedProject} setState={setState} close={() => setSelectedProjectId(null)} />}
+    </Suspense>
   </div>;
 }

@@ -134,6 +134,7 @@ html[data-theme="light"] .os-sidebar { background: linear-gradient(155deg, rgba(
 .os-page { width: min(100%,1500px); margin: 0 auto; padding: 34px clamp(22px,4vw,50px) 70px; }
 .os-home-page { max-width: 1200px; }
 .os-screen { display: grid; gap: 22px; animation: os-screen-in 220ms ease both; }
+.os-screen-loading { display: grid; place-items: center; align-content: center; min-height: 45dvh; gap: 10px; color: var(--os-muted); }.os-screen-loading i { width: 28px; height: 28px; border: 3px solid var(--os-line-strong); border-top-color: var(--os-rust); border-radius: 50%; animation: os-loading-spin 650ms linear infinite; }.os-screen-loading span { font-size: 9px; font-weight: 680; letter-spacing: .05em; }@keyframes os-loading-spin { to { transform: rotate(360deg); } }
 @keyframes os-screen-in { from { opacity: 0; transform: translateY(5px); } }
 .os-screen-head { display: flex; align-items: end; justify-content: space-between; min-height: 76px; gap: 18px; }
 .os-screen-head > div:first-child > span, .os-section-head span { display: block; margin-bottom: 7px; color: var(--os-rust-soft); font-size: 9px; font-weight: 790; letter-spacing: .12em; }

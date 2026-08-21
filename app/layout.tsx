@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./base.css";
 import "./personal-os.css";
@@ -55,51 +54,44 @@ export const viewport: Viewport = {
   ],
 };
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
-  const description =
-    "Görevleri, projeleri ve bilgiyi tek bir sakin çalışma alanında birleştiren kişisel işletim sistemi.";
+const description =
+  "Görevleri, projeleri ve bilgiyi tek bir sakin çalışma alanında birleştiren kişisel işletim sistemi.";
 
-  return {
-    metadataBase: new URL(origin),
-    applicationName: "Personal OS",
-    manifest: "/manifest.webmanifest",
-    title: {
-      default: "Personal OS — Hayat, Proje & Bilgi Sistemi",
-      template: "%s · Personal OS",
-    },
+export const metadata: Metadata = {
+  metadataBase: new URL("https://os.cosmibit.com"),
+  applicationName: "Personal OS",
+  title: {
+    default: "Personal OS — Hayat, Proje & Bilgi Sistemi",
+    template: "%s · Personal OS",
+  },
+  description,
+  icons: {
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: "/favicon.svg",
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Personal OS",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: { telephone: false },
+  openGraph: {
+    title: "Personal OS",
     description,
-    icons: {
-      icon: [
-        { url: "/favicon.svg", type: "image/svg+xml" },
-        { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
-      ],
-      shortcut: "/favicon.svg",
-      apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
-    },
-    appleWebApp: {
-      capable: true,
-      title: "Personal OS",
-      statusBarStyle: "black-translucent",
-    },
-    formatDetection: { telephone: false },
-    openGraph: {
-      title: "Personal OS",
-      description,
-      type: "website",
-      images: [`${origin}/og.png`],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "Personal OS",
-      description,
-      images: [`${origin}/og.png`],
-    },
-  };
-}
+    type: "website",
+    images: ["/og.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Personal OS",
+    description,
+    images: ["/og.png"],
+  },
+};
 
 export default function RootLayout({
   children,

@@ -27,6 +27,7 @@ async function showNativeInstallPrompt(prompt: InstallPromptEvent) {
 export default function PwaRegistration() {
   const [installed, setInstalled] = useState(false);
   const [installable, setInstallable] = useState(false);
+  const [pwaReady, setPwaReady] = useState(false);
   const [bannerVisible, setBannerVisible] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [platform] = useState<Platform>(() => typeof navigator === "undefined" ? "desktop" : currentPlatform());
@@ -34,8 +35,10 @@ export default function PwaRegistration() {
   useEffect(() => {
     const syncInstallState = () => {
       const standalone = isStandaloneApp();
+      const promptReady = Boolean(window.__personalOSInstallPrompt);
       setInstalled(standalone);
-      setInstallable(Boolean(window.__personalOSInstallPrompt));
+      setInstallable(promptReady);
+      if (promptReady) setBannerVisible(true);
       if (standalone) {
         setBannerVisible(false);
         setHelpOpen(false);
@@ -46,6 +49,7 @@ export default function PwaRegistration() {
       navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(async (registration) => {
         await navigator.serviceWorker.ready;
         window.__personalOSPwaError = undefined;
+        setPwaReady(true);
         registration.update().catch(() => undefined);
         window.dispatchEvent(new Event("personal-os-pwa-ready"));
       }).catch((error: unknown) => {
@@ -83,7 +87,7 @@ export default function PwaRegistration() {
 
     syncInstallState();
     const bannerTimer = window.setTimeout(() => {
-      if (!isStandaloneApp()) setBannerVisible(true);
+      if (!isStandaloneApp() && platform === "ios") setBannerVisible(true);
     }, 900);
     window.addEventListener("beforeinstallprompt", captureInstallPrompt);
     window.addEventListener("appinstalled", onAppInstalled);
@@ -101,7 +105,7 @@ export default function PwaRegistration() {
       window.removeEventListener("personal-os-install-ready", syncInstallState);
       window.removeEventListener("personal-os-install-changed", syncInstallState);
     };
-  }, []);
+  }, [platform]);
 
   if (installed) return null;
 
@@ -110,24 +114,24 @@ export default function PwaRegistration() {
     { icon: Download, title: "Ana Ekrana Ekle", detail: "Listeden Ana Ekrana Ekle seçeneğini seç ve onayla." },
   ] : platform === "android" ? [
     { icon: ExternalLink, title: "Tam Chrome'da aç", detail: "Uygulama içi sekmedeysen ⋮ menüsünden Chrome'da aç seçeneğini kullan." },
-    { icon: MoreVertical, title: "Chrome menüsünü aç", detail: "Uygulamayı yükle veya Ana ekrana ekle seçeneğine dokun." },
+    { icon: MoreVertical, title: "Yükle kartını bekle", detail: "Sayfayı yenile ve Personal OS içindeki Yükle düğmesini kullan; Ana ekrana ekle kısayoldur." },
   ] : [
     { icon: ExternalLink, title: "Chrome veya Edge'de aç", detail: "Adres çubuğundaki uygulama yükleme simgesini kullan." },
-    { icon: MoreVertical, title: "Tarayıcı menüsü", detail: "Uygulamayı yükle seçeneğini seç ve onayla." },
+    { icon: MoreVertical, title: "Uygulamayı yükle", detail: "Tarayıcı menüsündeki Uygulamayı yükle seçeneğini seç; kısayol seçeneğini kullanma." },
   ];
 
   const requestInstall = () => window.dispatchEvent(new Event("personal-os-install-request"));
   const helpText = platform === "ios"
     ? "iPhone ve iPad kurulumunu Safari'nin paylaşım menüsünden tamamlayabilirsin."
     : platform === "android"
-      ? "Chrome kurulum seçeneğini göstermiyorsa sayfa uygulama içi bir sekmede açılmış olabilir."
-      : "Masaüstünde Chrome veya Edge'in adres çubuğu ya da menüsü kurulum seçeneğini gösterir.";
+      ? `${pwaReady ? "PWA hazır." : "PWA hazırlanıyor."} “Ana ekrana ekle” yalnızca kısayol oluşturur; bağımsız uygulama için Personal OS içindeki Yükle düğmesini kullan.`
+      : "Masaüstünde bağımsız uygulama kurulumu için Chrome veya Edge'in Uygulamayı yükle seçeneğini kullan.";
 
   return <>
     {bannerVisible && !helpOpen && <aside className="os-pwa-install-banner" aria-label="Personal OS uygulamasını yükle">
       <span className="os-pwa-install-icon"><Download /></span>
-      <span><strong>{"Personal OS'u yükle"}</strong><small>{installable ? "Uygulama olarak daha hızlı ve tam ekran kullan." : "Ana ekrandan tek dokunuşla, tam ekran aç."}</small></span>
-      <button className="os-pwa-install-action" onClick={requestInstall}>{installable ? "Yükle" : "Nasıl?"}</button>
+      <span><strong>{"Personal OS'u yükle"}</strong><small>{installable ? "Chrome tarafından doğrulandı; bağımsız ve tam ekran kur." : "Safari'den bağımsız uygulama olarak ekle."}</small></span>
+      <button className="os-pwa-install-action" onClick={requestInstall}>{installable ? "Yükle" : "Adımlar"}</button>
       <button className="os-pwa-install-close" onClick={() => setBannerVisible(false)} aria-label="Kurulum önerisini kapat"><X /></button>
     </aside>}
     {helpOpen && <div className="os-pwa-help-layer"><button className="os-pwa-help-scrim" onClick={() => setHelpOpen(false)} aria-label="Kurulum yardımını kapat" /><section className="os-pwa-help" role="dialog" aria-modal="true" aria-label="Personal OS uygulamasını yükle">

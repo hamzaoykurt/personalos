@@ -526,6 +526,8 @@
 .continueList > button > svg { width: 16px; color: var(--home-faint); }
 
 @media (max-width: 720px) {
+  .home::before, .home::after { display: none; }
+  .taskList, .weekPanel, .continueList { backdrop-filter: none; }
   .header { margin-bottom: 21px; }
   .header span { font-size: 11px; }
   .header h1 { font-size: 52px; }

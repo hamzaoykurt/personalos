@@ -62,7 +62,8 @@ test("ships an installable Personal OS manifest and offline shell", async () => 
 
   const { readFile, stat } = await import("node:fs/promises");
   const serviceWorker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
-  assert.match(serviceWorker, /personal-os-v6/);
+  assert.match(serviceWorker, /personal-os-v7/);
+  assert.match(serviceWorker, /navigationPreload/);
   assert.match(serviceWorker, /\/api\/state/);
   assert.ok((await stat(new URL("../public/icons/icon-192.png", import.meta.url))).size > 1000);
   assert.ok((await stat(new URL("../public/icons/icon-512.png", import.meta.url))).size > 1000);
