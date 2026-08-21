@@ -42,6 +42,29 @@ test("ships product-specific metadata and social preview", async () => {
   assert.match(html, /Hayat, Proje &amp; Bilgi Sistemi/);
   assert.match(html, /og\.png/);
   assert.match(html, /summary_large_image/);
+  assert.match(html, /name="viewport" content="width=device-width, initial-scale=1"/);
+  assert.match(html, /rel="manifest" href="\/manifest\.webmanifest"/);
+  assert.match(html, /apple-touch-icon\.png/);
+  assert.match(html, /apple-mobile-web-app-capable" content="yes"/);
+});
+
+test("ships an installable Personal OS manifest and offline shell", async () => {
+  const response = await render("/manifest.webmanifest");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^application\/manifest\+json/i);
+  const manifest = await response.json();
+  assert.equal(manifest.short_name, "Personal OS");
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.start_url, "/");
+  assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));
+  assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512" && icon.purpose === "maskable"));
+
+  const { readFile, stat } = await import("node:fs/promises");
+  const serviceWorker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.match(serviceWorker, /personal-os-v4/);
+  assert.match(serviceWorker, /\/api\/state/);
+  assert.ok((await stat(new URL("../public/icons/icon-192.png", import.meta.url))).size > 1000);
+  assert.ok((await stat(new URL("../public/icons/icon-512.png", import.meta.url))).size > 1000);
 });
 
 test("server-renders every primary Personal OS section", async () => {

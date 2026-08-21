@@ -42,7 +42,7 @@ html[data-theme="light"] body {
 html[data-reduce-motion="true"] *, html[data-reduce-motion="true"] *::before, html[data-reduce-motion="true"] *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
-.os-app { min-height: 100vh; color: var(--os-text); background: radial-gradient(circle at 74% 10%, rgba(171,83,48,.12), transparent 34rem), radial-gradient(circle at 18% 78%, rgba(122,143,83,.08), transparent 32rem), repeating-linear-gradient(118deg, transparent 0 18px, rgba(255,255,255,.009) 19px 20px), var(--os-bg); }
+.os-app { width: 100%; max-width: 100%; min-height: 100vh; min-height: 100dvh; overflow-x: clip; color: var(--os-text); background: radial-gradient(circle at 74% 10%, rgba(171,83,48,.12), transparent 34rem), radial-gradient(circle at 18% 78%, rgba(122,143,83,.08), transparent 32rem), repeating-linear-gradient(118deg, transparent 0 18px, rgba(255,255,255,.009) 19px 20px), var(--os-bg); }
 .os-ambient { position: fixed; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; }
 .os-ambient i { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .2; }
 .os-ambient i:first-child { top: -180px; right: 5%; width: 420px; height: 420px; background: #9d492d; }
@@ -96,7 +96,7 @@ html[data-theme="light"] .os-sidebar { background: linear-gradient(155deg, rgba(
 .os-sync-chip.is-offline i { background: var(--os-danger); }
 @keyframes os-pulse { 50% { opacity: .35; } }
 
-.os-main { position: relative; z-index: 1; min-height: 100vh; margin-left: calc(var(--os-sidebar) + 24px); }
+.os-main { position: relative; z-index: 1; width: auto; max-width: 100%; min-height: 100vh; min-height: 100dvh; margin-left: calc(var(--os-sidebar) + 24px); }
 .os-topbar { position: sticky; z-index: 50; top: 0; display: grid; grid-template-columns: 44px minmax(0,1fr) auto; align-items: center; min-height: 66px; padding: 10px clamp(22px,4vw,50px); gap: 12px; background: color-mix(in srgb, var(--os-bg) 84%, transparent); border-bottom: 1px solid var(--os-line); backdrop-filter: blur(22px) saturate(1.08); }
 .os-topbar > button { display: none; }
 .os-topbar > strong { font: 700 13px var(--os-display); letter-spacing: .01em; }

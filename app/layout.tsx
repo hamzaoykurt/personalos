@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./base.css";
 import "./personal-os.css";
 import "./personal-os-sections.css";
 import "./personal-os-overlays.css";
+import PwaRegistration from "./components/pwa/PwaRegistration";
 
 const themeBootScript = `(() => {
   try {
@@ -30,6 +31,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d0c" },
+    { media: "(prefers-color-scheme: light)", color: "#f2eee4" },
+  ],
+};
+
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
@@ -40,15 +51,27 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(origin),
+    applicationName: "Personal OS",
+    manifest: "/manifest.webmanifest",
     title: {
       default: "Personal OS — Hayat, Proje & Bilgi Sistemi",
       template: "%s · Personal OS",
     },
     description,
     icons: {
-      icon: "/favicon.svg",
+      icon: [
+        { url: "/favicon.svg", type: "image/svg+xml" },
+        { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
+      ],
       shortcut: "/favicon.svg",
+      apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     },
+    appleWebApp: {
+      capable: true,
+      title: "Personal OS",
+      statusBarStyle: "black-translucent",
+    },
+    formatDetection: { telephone: false },
     openGraph: {
       title: "Personal OS",
       description,
@@ -72,11 +95,14 @@ export default function RootLayout({
   return (
     <html lang="tr" suppressHydrationWarning>
       <head>
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <PwaRegistration />
         {children}
       </body>
     </html>
